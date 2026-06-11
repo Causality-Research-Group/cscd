@@ -1,0 +1,10 @@
+causal-learn
+numpy
+pandas
+scipy
+scikit-learn
+matplotlib
+seaborn
+networkx
+pgmpy
+jinja2

@@ -1,0 +1,390 @@
+import logging
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+import numpy as np
+import pandas as pd
+
+from sklearn.model_selection import train_test_split
+
+from .config import ExperimentConfig, DomainKnowledge
+from .data import (
+    generate_random_dag,
+    hide_latents,
+    load_bnlearn_pgmpy_dataset,
+    load_causallearn_sachs,
+    load_real_csv,
+    sachs_reference_graph,
+    simulate_linear_sem,
+)
+from .utils import numpy_to_adj
+from .metrics import accepted_precision_recall, shd, skeleton_f1, status_counts, summarize_claims
+from .plotting import make_summary_table, plot_calibration, plot_claim_rates, plot_precision_recall, plot_raw_self_compatibility, plot_score_distributions, plot_top_claims, save_and_plot
+from .selfcompat import (
+    calibration_scores,
+    candidate_graph_score,
+    conformal_graph_set,
+    conformal_threshold,
+    generate_candidate_graphs,
+    sample_variable_subsets,
+    self_compatibility_score_among_local_graphs,
+    train_local_graphs,
+)
+from .utils import make_domain_knowledge
+from .graph import discover_graph
+
+
+def _stable_method_offset(method: str) -> int:
+    return sum((ord(ch) * (i + 1) for i, ch in enumerate(method))) % 100_000
+
+
+def _make_rng(seed: int) -> np.random.Generator:
+    return np.random.default_rng(seed)
+
+
+def _run_one_task(task: Dict) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    return run_one(**task)
+
+
+def run_one(
+    data: pd.DataFrame,
+    knowledge: DomainKnowledge,
+    config: ExperimentConfig,
+    method: str,
+    dataset: str,
+    repeat: int,
+    true_graph: Optional[pd.DataFrame] = None,
+    distance_mode: str = "directed",
+    rng_seed: Optional[int] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    if rng_seed is None:
+        rng_seed = config.random_seed + repeat * 1000 + _stable_method_offset(method)
+    rng = _make_rng(rng_seed)
+
+    var_names = list(data.columns)
+    D_tr, D_cal = train_test_split(
+        data,
+        test_size=0.5,
+        shuffle=True,
+        random_state=config.random_seed + repeat,
+    )
+    D_tr = D_tr.reset_index(drop=True)
+    D_cal = D_cal.reset_index(drop=True)
+
+    subsets = sample_variable_subsets(
+        var_names,
+        m=config.n_subsets,
+        subset_frac=config.subset_frac,
+        rng=rng,
+    )
+
+    local_graphs = train_local_graphs(
+        D_tr,
+        subsets,
+        knowledge,
+        method,
+        config,
+        rng,
+    )
+
+    raw_self_compat = self_compatibility_score_among_local_graphs(
+        local_graphs,
+        subsets,
+        distance_mode=distance_mode,
+    )
+
+    cal_scores = calibration_scores(
+        D_cal,
+        subsets,
+        local_graphs,
+        knowledge,
+        method,
+        config,
+        n_resamples=config.n_calibration_resamples,
+        rng=rng,
+        distance_mode=distance_mode,
+    )
+
+    candidates = generate_candidate_graphs(
+        D_tr,
+        knowledge,
+        method,
+        config,
+        config.n_candidate_graphs,
+        rng,
+    )
+
+    candidate_base_scores = [
+        candidate_graph_score(G, local_graphs, subsets, distance_mode)
+        for G in candidates
+    ]
+
+    full_graph = discover_graph(
+        D_tr,
+        method=method,
+        knowledge=knowledge,
+        config=config,
+        random_state=int(rng.integers(1_000_000)),
+    )
+
+    summary_rows = []
+    claim_rows = []
+    score_rows = []
+
+    for s in cal_scores:
+        score_rows.append({
+            "dataset": dataset,
+            "method": method,
+            "repeat": repeat,
+            "score_type": "calibration",
+            "score": float(s),
+        })
+
+    for s in candidate_base_scores:
+        score_rows.append({
+            "dataset": dataset,
+            "method": method,
+            "repeat": repeat,
+            "score_type": "candidate",
+            "score": float(s),
+        })
+
+    for alpha in config.alpha_values:
+        tau = conformal_threshold(cal_scores, alpha)
+        selected, candidate_scores = conformal_graph_set(
+            candidates,
+            local_graphs,
+            subsets,
+            tau,
+            distance_mode=distance_mode,
+        )
+
+        claims = summarize_claims(
+            selected,
+            var_names,
+            accepted_threshold=config.accepted_threshold,
+            rejected_threshold=config.rejected_threshold,
+        )
+
+        counts = status_counts(claims)
+        pr = accepted_precision_recall(claims, true_graph)
+
+        if true_graph is not None:
+            graph_shd = shd(full_graph, true_graph)
+            sk_prec, sk_rec, sk_f1 = skeleton_f1(full_graph, true_graph)
+        else:
+            graph_shd = np.nan
+            sk_prec, sk_rec, sk_f1 = np.nan, np.nan, np.nan
+
+        # Calibration check (Proposition 1): fraction of cal scores exceeding
+        # τ_α should be approximately α.  tau=inf when k>N, in which case all
+        # scores are ≤ τ and the empirical rate is 0.
+        finite_tau = np.isfinite(tau)
+        cal_exceed_rate = float(np.mean(cal_scores > tau)) if finite_tau else 0.0
+        calibration_error = cal_exceed_rate - alpha
+
+        total_claims = len(var_names) * (len(var_names) - 1)
+        summary_rows.append({
+            "dataset": dataset,
+            "method": method,
+            "repeat": repeat,
+            "alpha": alpha,
+            "tau": tau if finite_tau else float("nan"),
+            "raw_self_compatibility": raw_self_compat,
+            "n_selected_graphs": len(selected),
+            "candidate_accept_rate": float(np.mean(np.array(candidate_scores) <= tau)),
+            "cal_exceed_rate": cal_exceed_rate,
+            "calibration_error": calibration_error,
+            "full_graph_shd": graph_shd,
+            "skeleton_precision": sk_prec,
+            "skeleton_recall": sk_rec,
+            "skeleton_f1": sk_f1,
+            **counts,
+            **pr,
+            "accepted_rate": counts["n_accepted"] / total_claims,
+            "rejected_rate": counts["n_rejected"] / total_claims,
+            "unresolved_rate": counts["n_unresolved"] / total_claims,
+        })
+
+        claims = claims.copy()
+        claims["dataset"] = dataset
+        claims["method"] = method
+        claims["repeat"] = repeat
+        claims["alpha"] = alpha
+        claim_rows.append(claims)
+
+    return (
+        pd.DataFrame(summary_rows),
+        pd.concat(claim_rows, ignore_index=True),
+        pd.DataFrame(score_rows),
+    )
+
+
+def _execute_tasks(tasks: List[Dict], n_workers: Optional[int]) -> List[Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]]:
+    if n_workers is None or n_workers > 1:
+        with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            future_to_task = {
+                executor.submit(_run_one_task, task): task
+                for task in tasks
+            }
+            results = []
+            for future in as_completed(future_to_task):
+                task = future_to_task[future]
+                try:
+                    results.append(future.result())
+                except Exception as exc:
+                    logger.warning(
+                        "Skipping task dataset=%s method=%s repeat=%s: %s",
+                        task["dataset"],
+                        task["method"],
+                        task["repeat"],
+                        exc,
+                    )
+            return results
+    results = []
+    for task in tasks:
+        try:
+            results.append(run_one(**task))
+        except Exception as exc:
+            logger.warning(
+                "Skipping task dataset=%s method=%s repeat=%s: %s",
+                task["dataset"],
+                task["method"],
+                task["repeat"],
+                exc,
+            )
+    return results
+
+
+def run_synthetic(
+    methods: List[str],
+    config: ExperimentConfig,
+    outdir: str,
+    distance_mode: str,
+    n_workers: Optional[int] = None,
+) -> None:
+    tasks = []
+    all_summary = []
+    all_claims = []
+    all_scores = []
+
+    for repeat in range(config.n_repeats):
+        rng = _make_rng(config.random_seed + repeat)
+        B = generate_random_dag(
+            config.p,
+            config.expected_degree,
+            rng,
+        )
+
+        data = simulate_linear_sem(
+            B,
+            n=config.n,
+            noise=config.noise,
+            rng=rng,
+        )
+        data, B_obs = hide_latents(data, B, config.latent_fraction, rng)
+
+        var_names = list(data.columns)
+        true_graph = numpy_to_adj(B_obs, var_names)
+        # No hard ordering constraint: the true causal order is a random
+        # permutation, not the variable-index order.
+        knowledge = make_domain_knowledge(var_names)
+
+        for method in methods:
+            tasks.append({
+                "data": data,
+                "knowledge": knowledge,
+                "config": config,
+                "method": method,
+                "dataset": "synthetic",
+                "repeat": repeat,
+                "true_graph": true_graph,
+                "distance_mode": distance_mode,
+                "rng_seed": config.random_seed + repeat * 1000 + _stable_method_offset(method),
+            })
+
+    for summary, claims, scores in _execute_tasks(tasks, n_workers):
+        all_summary.append(summary)
+        all_claims.append(claims)
+        all_scores.append(scores)
+
+    save_and_plot(all_summary, all_claims, all_scores, outdir)
+
+
+def run_named_dataset(
+    dataset: str,
+    methods: List[str],
+    config: ExperimentConfig,
+    outdir: str,
+    distance_mode: str,
+    n_workers: Optional[int] = None,
+    real_csv: Optional[str] = None,
+) -> None:
+    dataset = dataset.lower()
+
+    if dataset == "sachs_real":
+        data, ref_graph = load_causallearn_sachs()
+        dataset_label = "sachs_real"
+    elif dataset == "asia":
+        data, ref_graph = load_bnlearn_pgmpy_dataset(
+            "asia",
+            n_samples=config.n,
+            random_seed=config.random_seed,
+        )
+        dataset_label = "asia"
+    elif dataset == "sachs_bn":
+        data, ref_graph = load_bnlearn_pgmpy_dataset(
+            "sachs",
+            n_samples=config.n,
+            random_seed=config.random_seed,
+        )
+        dataset_label = "sachs_bn"
+    elif dataset == "child":
+        data, ref_graph = load_bnlearn_pgmpy_dataset(
+            "child",
+            n_samples=config.n,
+            random_seed=config.random_seed,
+        )
+        dataset_label = "child"
+    elif dataset == "csv":
+        if real_csv is None:
+            raise ValueError("--real_csv is required when --dataset csv.")
+        data = load_real_csv(real_csv)
+        ref_graph = sachs_reference_graph(list(data.columns))
+        dataset_label = "csv"
+    else:
+        raise ValueError(
+            "Unknown dataset. Use one of: synthetic, sachs_real, asia, "
+            "sachs_bn, child, csv."
+        )
+
+    var_names = list(data.columns)
+    knowledge = make_domain_knowledge(var_names)
+
+    tasks = []
+    for repeat in range(config.n_repeats):
+        for method in methods:
+            tasks.append({
+                "data": data,
+                "knowledge": knowledge,
+                "config": config,
+                "method": method,
+                "dataset": dataset_label,
+                "repeat": repeat,
+                "true_graph": ref_graph,
+                "distance_mode": distance_mode,
+                "rng_seed": config.random_seed + repeat * 1000 + _stable_method_offset(method),
+            })
+
+    all_summary = []
+    all_claims = []
+    all_scores = []
+
+    for summary, claims, scores in _execute_tasks(tasks, n_workers):
+        all_summary.append(summary)
+        all_claims.append(claims)
+        all_scores.append(scores)
+
+    save_and_plot(all_summary, all_claims, all_scores, outdir)
