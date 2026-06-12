@@ -34,6 +34,9 @@ class ExperimentConfig:
     independence_test: str = "fisherz"
     ges_score: str = "local_score_BIC"
 
+    stability_n_bootstraps: int = 50
+    stability_threshold: float = 0.6
+
     random_seed: int = 123
 
 
@@ -77,6 +80,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--distance_mode", choices=["directed", "skeleton"], default="directed"
     )
+    parser.add_argument("--stability_n_bootstraps", type=int, default=50)
+    parser.add_argument("--stability_threshold", type=float, default=0.6)
     parser.add_argument("--random_seed", type=int, default=123)
 
     return parser.parse_args()

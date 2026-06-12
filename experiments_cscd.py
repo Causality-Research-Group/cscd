@@ -42,6 +42,8 @@ def main() -> None:
         ges_score=args.ges_score,
         accepted_threshold=args.accepted_threshold,
         rejected_threshold=args.rejected_threshold,
+        stability_n_bootstraps=args.stability_n_bootstraps,
+        stability_threshold=args.stability_threshold,
         random_seed=args.random_seed,
     )
 

@@ -34,6 +34,7 @@ from .selfcompat import (
 )
 from .utils import make_domain_knowledge
 from .graph import discover_graph
+from .baselines import baseline_summary
 
 
 def _stable_method_offset(method: str) -> int:
@@ -138,6 +139,20 @@ def run_one(
         random_state=int(rng.integers(1_000_000)),
     )
 
+    baseline_cols = baseline_summary(
+        full_graph=full_graph,
+        data_train=D_tr,
+        knowledge=knowledge,
+        method=method,
+        config=config,
+        rng=rng,
+        candidates=candidates,
+        candidate_scores=candidate_base_scores,
+        raw_self_compat=raw_self_compat,
+        var_names=var_names,
+        true_graph=true_graph,
+    )
+
     summary_rows = []
     claim_rows = []
     score_rows = []
@@ -229,6 +244,7 @@ def run_one(
             "accepted_rate": counts["n_accepted"] / total_claims,
             "rejected_rate": counts["n_rejected"] / total_claims,
             "unresolved_rate": counts["n_unresolved"] / total_claims,
+            **baseline_cols,
         })
 
         claims = claims.copy()
