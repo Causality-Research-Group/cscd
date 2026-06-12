@@ -423,8 +423,10 @@ def make_figure_decision(df: pd.DataFrame, outpath: str) -> None:
     methods_present = [m for m in METHOD_ORDER if m in sub10["method"].values]
 
     bias_cols = ["decision_bias_oracle", "decision_bias_accepted",
-                 "decision_bias_single", "decision_bias_naive"]
-    bias_labels = ["Oracle", "CSCD accepted", "Single run", "Naive"]
+                 "decision_bias_single_acted", "decision_bias_single",
+                 "decision_bias_naive"]
+    bias_labels = ["Oracle", "CSCD accepted (acted)", "Single run (acted)",
+                   "Single run (all)", "Naive"]
     present_cols = [c for c in bias_cols if c in sub10.columns]
     present_labels = [bias_labels[bias_cols.index(c)] for c in present_cols]
 
@@ -483,7 +485,9 @@ NUMERIC_COLS = [
     "stability_recall", "stability_shd", "stability_skeleton_f1",
     "uncal_precision", "uncal_recall", "uncal_unresolved_rate",
     "uncal_n_selected_graphs", "decision_bias_oracle", "decision_bias_single",
-    "decision_bias_accepted", "decision_bias_naive", "decision_n_pairs",
+    "decision_bias_accepted", "decision_bias_single_acted",
+    "decision_bias_naive", "decision_abstain_rate", "decision_n_pairs",
+    "decision_n_acted",
 ]
 
 
@@ -778,7 +782,9 @@ def print_checks(df_main: pd.DataFrame) -> None:
 
     # (iii) Ordering of decision biases: accepted vs single vs naive
     print("\n(iii) Decision bias on confounded pairs (accepted < single) at alpha=0.10:", flush=True)
-    bias_cols_check = ["decision_bias_oracle", "decision_bias_accepted", "decision_bias_single", "decision_bias_naive"]
+    bias_cols_check = ["decision_bias_oracle", "decision_bias_accepted",
+                       "decision_bias_single_acted", "decision_bias_single",
+                       "decision_bias_naive", "decision_abstain_rate"]
     for method in methods_present:
         sub_m = sub10[sub10["method"] == method]
         if sub_m.empty:
@@ -792,22 +798,27 @@ def print_checks(df_main: pd.DataFrame) -> None:
                 vals[col] = float("nan")
         b_oracle = vals.get("decision_bias_oracle", float("nan"))
         b_accept = vals.get("decision_bias_accepted", float("nan"))
+        b_single_acted = vals.get("decision_bias_single_acted", float("nan"))
         b_single = vals.get("decision_bias_single", float("nan"))
         b_naive  = vals.get("decision_bias_naive", float("nan"))
-        # Primary reviewer claim: acting on accepted claims beats acting on a
-        # single discovered graph.  Naive is reported as context (on
-        # confounded pairs it should be the worst non-oracle strategy).
+        b_abstain = vals.get("decision_abstain_rate", float("nan"))
+        # Primary reviewer claim: where CSCD commits to a decision (all parent
+        # claims resolved), acting on accepted claims beats acting on a single
+        # discovered graph on the same pairs.  Naive is context (worst
+        # non-oracle strategy on confounded pairs).
         primary_ok = (
-            not math.isnan(b_accept) and not math.isnan(b_single)
-            and b_accept < b_single
+            not math.isnan(b_accept) and not math.isnan(b_single_acted)
+            and b_accept < b_single_acted
         )
         naive_note = ""
         if not math.isnan(b_naive) and not math.isnan(b_accept):
             naive_note = "; accepted < naive" if b_accept < b_naive else "; WARNING accepted >= naive"
         print(
             f"    {method.upper()}: oracle={b_oracle:.4f}, accepted={b_accept:.4f}, "
-            f"single={b_single:.4f}, naive={b_naive:.4f} → "
-            + ("PASS (accepted < single)" if primary_ok else "FAIL (accepted >= single)")
+            f"single_acted={b_single_acted:.4f}, single_all={b_single:.4f}, "
+            f"naive={b_naive:.4f}, abstain={b_abstain:.3f} → "
+            + ("PASS (accepted < single on acted pairs)" if primary_ok
+               else "FAIL (accepted >= single on acted pairs)")
             + naive_note,
             flush=True,
         )

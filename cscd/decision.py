@@ -120,7 +120,11 @@ def decision_task_summary(
     ----------
     oracle   : adjust for true parents of treatment (from true_graph).
     single   : adjust for parents of treatment in the single discovered graph.
-    accepted : adjust for parents of treatment from accepted claims only.
+    accepted : selective — abstain when any parent claim for the treatment is
+               unresolved; otherwise adjust for accepted parents.  Reported
+               only over acted pairs, alongside the single-run bias on the
+               same pairs (decision_bias_single_acted) and the abstention
+               rate.
     naive    : no adjustment (empty set).
 
     Parameters
@@ -152,8 +156,11 @@ def decision_task_summary(
         "decision_bias_oracle": float("nan"),
         "decision_bias_single": float("nan"),
         "decision_bias_accepted": float("nan"),
+        "decision_bias_single_acted": float("nan"),
         "decision_bias_naive": float("nan"),
+        "decision_abstain_rate": float("nan"),
         "decision_n_pairs": 0,
+        "decision_n_acted": 0,
     }
 
     p = len(var_names)
@@ -190,8 +197,10 @@ def decision_task_summary(
 
     bias_oracle = []
     bias_single = []
-    bias_accepted = []
     bias_naive = []
+    bias_accepted_acted = []
+    bias_single_acted = []
+    n_abstained = 0
 
     for t_name, y_name in pairs:
         t_idx = var_names.index(t_name)
@@ -207,28 +216,44 @@ def decision_task_summary(
         adj_accepted = parents_from_claims(claims, t_name)
         adj_empty: List[str] = []
 
+        # Selective rule: CSCD acts only when every parent claim for the
+        # treatment is resolved (accepted or rejected).  An unresolved parent
+        # claim means the adjustment set itself is uncertain, so the
+        # calibrated answer is to abstain rather than estimate.
+        parent_claims = claims[(claims["child"] == t_name) & (claims["parent"] != t_name)]
+        cscd_acts = not (parent_claims["status"] == "unresolved").any()
+
         try:
             est_oracle = estimate_effect_ols(data_eval, t_name, y_name, adj_oracle)
             est_single = estimate_effect_ols(data_eval, t_name, y_name, adj_single)
-            est_accepted = estimate_effect_ols(data_eval, t_name, y_name, adj_accepted)
             est_naive = estimate_effect_ols(data_eval, t_name, y_name, adj_empty)
+            if cscd_acts:
+                est_accepted = estimate_effect_ols(data_eval, t_name, y_name, adj_accepted)
         except Exception as exc:
             logger.debug("decision_task_summary OLS failed for (%s, %s): %s", t_name, y_name, exc)
             continue
 
         bias_oracle.append(abs(est_oracle - theta))
         bias_single.append(abs(est_single - theta))
-        bias_accepted.append(abs(est_accepted - theta))
         bias_naive.append(abs(est_naive - theta))
+        if cscd_acts:
+            bias_accepted_acted.append(abs(est_accepted - theta))
+            bias_single_acted.append(abs(est_single - theta))
+        else:
+            n_abstained += 1
 
     n_eval = len(bias_oracle)
     if n_eval == 0:
         return nan_result
 
+    n_acted = len(bias_accepted_acted)
     return {
         "decision_bias_oracle": float(np.mean(bias_oracle)),
         "decision_bias_single": float(np.mean(bias_single)),
-        "decision_bias_accepted": float(np.mean(bias_accepted)),
+        "decision_bias_accepted": float(np.mean(bias_accepted_acted)) if n_acted else float("nan"),
+        "decision_bias_single_acted": float(np.mean(bias_single_acted)) if n_acted else float("nan"),
         "decision_bias_naive": float(np.mean(bias_naive)),
+        "decision_abstain_rate": float(n_abstained / n_eval),
         "decision_n_pairs": n_eval,
+        "decision_n_acted": n_acted,
     }
