@@ -34,6 +34,7 @@ def main() -> None:
         n_subsets=args.n_subsets,
         subset_frac=args.subset_frac,
         n_calibration_resamples=args.n_calibration_resamples,
+        n_test_chunks=args.n_test_chunks,
         n_candidate_graphs=args.n_candidate_graphs,
         pc_alpha=args.pc_alpha,
         fci_alpha=args.fci_alpha,

@@ -95,17 +95,26 @@ def run_one(
         distance_mode=distance_mode,
     )
 
-    cal_scores = calibration_scores(
+    # Compute scores on N + N_test disjoint, equal-sized chunks of D_cal.
+    # The first N set the conformal threshold; the held-out remainder provide
+    # an honest estimate of the exceedance rate P(A_test > tau_alpha).
+    # Evaluating exceedance on the calibration scores themselves would make it
+    # a deterministic function of (N, alpha), identical across base methods.
+    N_cal = config.n_calibration_resamples
+    N_test = config.n_test_chunks
+    all_chunk_scores = calibration_scores(
         D_cal,
         subsets,
         local_graphs,
         knowledge,
         method,
         config,
-        n_resamples=config.n_calibration_resamples,
+        n_resamples=N_cal + N_test,
         rng=rng,
         distance_mode=distance_mode,
     )
+    cal_scores = all_chunk_scores[:N_cal]
+    test_scores = all_chunk_scores[N_cal:]
 
     candidates = generate_candidate_graphs(
         D_tr,
@@ -139,6 +148,15 @@ def run_one(
             "method": method,
             "repeat": repeat,
             "score_type": "calibration",
+            "score": float(s),
+        })
+
+    for s in test_scores:
+        score_rows.append({
+            "dataset": dataset,
+            "method": method,
+            "repeat": repeat,
+            "score_type": "test",
             "score": float(s),
         })
 
@@ -178,12 +196,16 @@ def run_one(
             graph_shd = np.nan
             sk_prec, sk_rec, sk_f1 = np.nan, np.nan, np.nan
 
-        # Calibration check (Proposition 1): fraction of cal scores exceeding
-        # τ_α should be approximately α.  tau=inf when k>N, in which case all
-        # scores are ≤ τ and the empirical rate is 0.
+        # Calibration check (Proposition 1): fraction of *held-out* chunk
+        # scores exceeding τ_α should be ≈ α.  tau=inf when k>N, in which case
+        # all scores are ≤ τ and the empirical rate is 0.
         finite_tau = np.isfinite(tau)
-        cal_exceed_rate = float(np.mean(cal_scores > tau)) if finite_tau else 0.0
+        if len(test_scores) > 0:
+            cal_exceed_rate = float(np.mean(test_scores > tau)) if finite_tau else 0.0
+        else:
+            cal_exceed_rate = float("nan")
         calibration_error = cal_exceed_rate - alpha
+        insample_exceed_rate = float(np.mean(cal_scores > tau)) if finite_tau else 0.0
 
         total_claims = len(var_names) * (len(var_names) - 1)
         summary_rows.append({
@@ -196,6 +218,7 @@ def run_one(
             "n_selected_graphs": len(selected),
             "candidate_accept_rate": float(np.mean(np.array(candidate_scores) <= tau)),
             "cal_exceed_rate": cal_exceed_rate,
+            "insample_exceed_rate": insample_exceed_rate,
             "calibration_error": calibration_error,
             "full_graph_shd": graph_shd,
             "skeleton_precision": sk_prec,

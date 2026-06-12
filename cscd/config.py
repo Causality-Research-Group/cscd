@@ -22,6 +22,7 @@ class ExperimentConfig:
     n_subsets: int = 30
     subset_frac: float = 0.5
     n_calibration_resamples: int = 20   # N disjoint cal chunks; paper uses 20
+    n_test_chunks: int = 20             # held-out chunks for empirical exceedance
     n_candidate_graphs: int = 80
 
     alpha_values: Tuple[float, ...] = (0.05, 0.10, 0.20)
@@ -63,6 +64,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n_subsets", type=int, default=30)
     parser.add_argument("--subset_frac", type=float, default=0.5)
     parser.add_argument("--n_calibration_resamples", type=int, default=20)
+    parser.add_argument("--n_test_chunks", type=int, default=20)
     parser.add_argument("--n_candidate_graphs", type=int, default=80)
 
     parser.add_argument("--pc_alpha", type=float, default=0.05)
