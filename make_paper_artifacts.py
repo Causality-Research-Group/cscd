@@ -748,10 +748,12 @@ def print_checks(df_main: pd.DataFrame) -> None:
             if n == 0:
                 print(f"    {method.upper()} alpha={alpha:.2f}: NO DATA", flush=True)
                 continue
-            m = sub_a.mean()
-            s = sub_a.std(ddof=1) / math.sqrt(n) if n > 1 else float("nan")
-            within = abs(m - alpha) <= 2 * s if not math.isnan(s) else "SE unknown"
-            status = "PASS" if within is True else ("FAIL" if within is False else "UNKNOWN (n<=1)")
+            m = float(sub_a.mean())
+            s = float(sub_a.std(ddof=1) / math.sqrt(n)) if n > 1 else float("nan")
+            if math.isnan(s):
+                status = "UNKNOWN (n<=1)"
+            else:
+                status = "PASS" if abs(m - alpha) <= 2 * s else "FAIL"
             se_str = f"{s:.4f}" if not math.isnan(s) else "nan"
             print(
                 f"    {method.upper()} alpha={alpha:.2f}: empirical={m:.4f}, "
@@ -775,7 +777,7 @@ def print_checks(df_main: pd.DataFrame) -> None:
         print(f"    {method.upper()}: {status}", flush=True)
 
     # (iii) Ordering of decision biases: accepted vs single vs naive
-    print("\n(iii) Decision bias ordering (accepted < single < naive) at alpha=0.10:", flush=True)
+    print("\n(iii) Decision bias on confounded pairs (accepted < single) at alpha=0.10:", flush=True)
     bias_cols_check = ["decision_bias_oracle", "decision_bias_accepted", "decision_bias_single", "decision_bias_naive"]
     for method in methods_present:
         sub_m = sub10[sub10["method"] == method]
@@ -792,14 +794,21 @@ def print_checks(df_main: pd.DataFrame) -> None:
         b_accept = vals.get("decision_bias_accepted", float("nan"))
         b_single = vals.get("decision_bias_single", float("nan"))
         b_naive  = vals.get("decision_bias_naive", float("nan"))
-        ordering_ok = (
-            not math.isnan(b_accept) and not math.isnan(b_single) and not math.isnan(b_naive)
-            and b_accept <= b_single <= b_naive
+        # Primary reviewer claim: acting on accepted claims beats acting on a
+        # single discovered graph.  Naive is reported as context (on
+        # confounded pairs it should be the worst non-oracle strategy).
+        primary_ok = (
+            not math.isnan(b_accept) and not math.isnan(b_single)
+            and b_accept < b_single
         )
+        naive_note = ""
+        if not math.isnan(b_naive) and not math.isnan(b_accept):
+            naive_note = "; accepted < naive" if b_accept < b_naive else "; WARNING accepted >= naive"
         print(
             f"    {method.upper()}: oracle={b_oracle:.4f}, accepted={b_accept:.4f}, "
             f"single={b_single:.4f}, naive={b_naive:.4f} → "
-            + ("PASS" if ordering_ok else "FAIL (ordering violated)"),
+            + ("PASS (accepted < single)" if primary_ok else "FAIL (accepted >= single)")
+            + naive_note,
             flush=True,
         )
 

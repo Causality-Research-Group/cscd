@@ -86,6 +86,24 @@ def _descendants(adj: pd.DataFrame, node: str) -> List[str]:
     return list(visited)
 
 
+def _is_confounded(true_graph: pd.DataFrame, t: str, y: str) -> bool:
+    """True if some parent of t is still an ancestor of y once t is removed.
+
+    Such a parent opens a backdoor path t <- pa ~> y, so the naive regression
+    of y on t is biased and adjustment is genuinely required.  Restricting the
+    decision task to confounded pairs keeps it informative: on unconfounded
+    pairs every strategy (including no adjustment) is consistent.
+    """
+    parents = parents_from_graph(true_graph, t)
+    if not parents:
+        return False
+    sub = true_graph.drop(index=t, columns=t)
+    for pa in parents:
+        if pa == y or y in _descendants(sub, pa):
+            return True
+    return False
+
+
 def decision_task_summary(
     data_eval: pd.DataFrame,
     W: np.ndarray,
@@ -149,11 +167,11 @@ def decision_task_summary(
     if not nodes_with_desc:
         return nan_result
 
-    # Sample up to n_pairs (treatment, outcome) pairs
+    # Sample up to n_pairs confounded (treatment, outcome) pairs
     pairs = []
     seen = set()
     attempts = 0
-    max_attempts = n_pairs * 20
+    max_attempts = n_pairs * 40
     while len(pairs) < n_pairs and attempts < max_attempts:
         attempts += 1
         t_name = nodes_with_desc[int(rng.integers(len(nodes_with_desc)))]
@@ -161,8 +179,10 @@ def decision_task_summary(
         if not desc:
             continue
         y_name = desc[int(rng.integers(len(desc)))]
-        if (t_name, y_name) not in seen:
-            seen.add((t_name, y_name))
+        if (t_name, y_name) in seen:
+            continue
+        seen.add((t_name, y_name))
+        if _is_confounded(true_graph, t_name, y_name):
             pairs.append((t_name, y_name))
 
     if not pairs:
