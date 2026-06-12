@@ -73,6 +73,38 @@ def parents_from_claims(claims: pd.DataFrame, node: str) -> List[str]:
     return list(claims.loc[mask, "parent"])
 
 
+def conservative_adjustment_from_claims(
+    claims: pd.DataFrame,
+    node: str,
+    accepted_threshold: float = 0.90,
+    rejected_threshold: float = 0.10,
+) -> List[str]:
+    """Adjustment set from the calibrated claim partition, erring on inclusion.
+
+    Includes any v whose parent claim (v -> node) is not rejected — omitting a
+    true confounder biases the estimate, whereas adjusting for an extra
+    non-descendant is harmless — but excludes v whose descendant claim
+    (node -> v) reaches the acceptance frequency, since conditioning on a
+    descendant of the treatment does introduce bias.
+    """
+    freq_in: Dict[str, float] = {}
+    freq_out: Dict[str, float] = {}
+    for _, row in claims.iterrows():
+        if row["child"] == node:
+            freq_in[row["parent"]] = row["frequency"]
+        elif row["parent"] == node:
+            freq_out[row["child"]] = row["frequency"]
+
+    adj = []
+    for v, f_in in freq_in.items():
+        f_out = freq_out.get(v, 0.0)
+        if np.isnan(f_in) or np.isnan(f_out):
+            continue
+        if f_in > rejected_threshold and f_out < accepted_threshold:
+            adj.append(v)
+    return adj
+
+
 def _descendants(adj: pd.DataFrame, node: str) -> List[str]:
     """Return all descendants of node in the adjacency DataFrame (BFS)."""
     visited = set()
@@ -113,19 +145,21 @@ def decision_task_summary(
     claims: pd.DataFrame,
     rng: np.random.Generator,
     n_pairs: int = 5,
+    accepted_threshold: float = 0.90,
+    rejected_threshold: float = 0.10,
 ) -> Dict[str, float]:
     """Compute mean absolute bias for four adjustment strategies.
 
     Strategies
     ----------
-    oracle   : adjust for true parents of treatment (from true_graph).
-    single   : adjust for parents of treatment in the single discovered graph.
-    accepted : selective — abstain when any parent claim for the treatment is
-               unresolved; otherwise adjust for accepted parents.  Reported
-               only over acted pairs, alongside the single-run bias on the
-               same pairs (decision_bias_single_acted) and the abstention
-               rate.
-    naive    : no adjustment (empty set).
+    oracle      : adjust for true parents of treatment (from true_graph).
+    single      : adjust for parents of treatment in the single discovered graph.
+    accepted    : adjust only for accepted parent claims (the strict policy).
+    notrejected : conservative policy from the calibrated claim partition —
+                  include parents whose claim is not rejected, exclude
+                  accepted descendants (see
+                  conservative_adjustment_from_claims).
+    naive       : no adjustment (empty set).
 
     Parameters
     ----------
@@ -156,11 +190,9 @@ def decision_task_summary(
         "decision_bias_oracle": float("nan"),
         "decision_bias_single": float("nan"),
         "decision_bias_accepted": float("nan"),
-        "decision_bias_single_acted": float("nan"),
+        "decision_bias_notrejected": float("nan"),
         "decision_bias_naive": float("nan"),
-        "decision_abstain_rate": float("nan"),
         "decision_n_pairs": 0,
-        "decision_n_acted": 0,
     }
 
     p = len(var_names)
@@ -197,10 +229,9 @@ def decision_task_summary(
 
     bias_oracle = []
     bias_single = []
+    bias_accepted = []
+    bias_notrejected = []
     bias_naive = []
-    bias_accepted_acted = []
-    bias_single_acted = []
-    n_abstained = 0
 
     for t_name, y_name in pairs:
         t_idx = var_names.index(t_name)
@@ -214,46 +245,36 @@ def decision_task_summary(
         adj_oracle = parents_from_graph(true_graph, t_name)
         adj_single = parents_from_graph(full_graph, t_name)
         adj_accepted = parents_from_claims(claims, t_name)
+        adj_notrejected = conservative_adjustment_from_claims(
+            claims, t_name, accepted_threshold, rejected_threshold
+        )
         adj_empty: List[str] = []
-
-        # Selective rule: CSCD acts only when every parent claim for the
-        # treatment is resolved (accepted or rejected).  An unresolved parent
-        # claim means the adjustment set itself is uncertain, so the
-        # calibrated answer is to abstain rather than estimate.
-        parent_claims = claims[(claims["child"] == t_name) & (claims["parent"] != t_name)]
-        cscd_acts = not (parent_claims["status"] == "unresolved").any()
 
         try:
             est_oracle = estimate_effect_ols(data_eval, t_name, y_name, adj_oracle)
             est_single = estimate_effect_ols(data_eval, t_name, y_name, adj_single)
+            est_accepted = estimate_effect_ols(data_eval, t_name, y_name, adj_accepted)
+            est_notrejected = estimate_effect_ols(data_eval, t_name, y_name, adj_notrejected)
             est_naive = estimate_effect_ols(data_eval, t_name, y_name, adj_empty)
-            if cscd_acts:
-                est_accepted = estimate_effect_ols(data_eval, t_name, y_name, adj_accepted)
         except Exception as exc:
             logger.debug("decision_task_summary OLS failed for (%s, %s): %s", t_name, y_name, exc)
             continue
 
         bias_oracle.append(abs(est_oracle - theta))
         bias_single.append(abs(est_single - theta))
+        bias_accepted.append(abs(est_accepted - theta))
+        bias_notrejected.append(abs(est_notrejected - theta))
         bias_naive.append(abs(est_naive - theta))
-        if cscd_acts:
-            bias_accepted_acted.append(abs(est_accepted - theta))
-            bias_single_acted.append(abs(est_single - theta))
-        else:
-            n_abstained += 1
 
     n_eval = len(bias_oracle)
     if n_eval == 0:
         return nan_result
 
-    n_acted = len(bias_accepted_acted)
     return {
         "decision_bias_oracle": float(np.mean(bias_oracle)),
         "decision_bias_single": float(np.mean(bias_single)),
-        "decision_bias_accepted": float(np.mean(bias_accepted_acted)) if n_acted else float("nan"),
-        "decision_bias_single_acted": float(np.mean(bias_single_acted)) if n_acted else float("nan"),
+        "decision_bias_accepted": float(np.mean(bias_accepted)),
+        "decision_bias_notrejected": float(np.mean(bias_notrejected)),
         "decision_bias_naive": float(np.mean(bias_naive)),
-        "decision_abstain_rate": float(n_abstained / n_eval),
         "decision_n_pairs": n_eval,
-        "decision_n_acted": n_acted,
     }

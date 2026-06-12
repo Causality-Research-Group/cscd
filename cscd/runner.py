@@ -227,6 +227,7 @@ def run_one(
             "decision_bias_oracle": float("nan"),
             "decision_bias_single": float("nan"),
             "decision_bias_accepted": float("nan"),
+            "decision_bias_notrejected": float("nan"),
             "decision_bias_naive": float("nan"),
             "decision_n_pairs": float("nan"),
         }
@@ -242,6 +243,8 @@ def run_one(
                     claims=claims,
                     rng=_dec_rng,
                     n_pairs=config.decision_n_pairs,
+                    accepted_threshold=config.accepted_threshold,
+                    rejected_threshold=config.rejected_threshold,
                 )
             except Exception as _dec_exc:
                 logger.warning("decision_task_summary failed: %s", _dec_exc)
