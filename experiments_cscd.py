@@ -45,6 +45,11 @@ def main() -> None:
         stability_n_bootstraps=args.stability_n_bootstraps,
         stability_threshold=args.stability_threshold,
         random_seed=args.random_seed,
+        knowledge_regime=args.knowledge_regime,
+        knowledge_mode=args.knowledge_mode,
+        knowledge_frac=args.knowledge_frac,
+        knowledge_noise=args.knowledge_noise,
+        lambda_penalty=args.lambda_penalty,
     )
 
     methods = [m.lower() for m in args.methods]

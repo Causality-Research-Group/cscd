@@ -19,7 +19,12 @@ from .data import (
     sachs_reference_graph,
     simulate_linear_sem,
 )
-from .utils import numpy_to_adj
+from .utils import (
+    corrupt_knowledge,
+    knowledge_from_true_graph,
+    make_domain_knowledge,
+    numpy_to_adj,
+)
 from .metrics import accepted_precision_recall, shd, skeleton_f1, status_counts, summarize_claims
 from .plotting import make_summary_table, plot_calibration, plot_claim_rates, plot_precision_recall, plot_raw_self_compatibility, plot_score_distributions, plot_top_claims, save_and_plot
 from .selfcompat import (
@@ -32,7 +37,6 @@ from .selfcompat import (
     self_compatibility_score_among_local_graphs,
     train_local_graphs,
 )
-from .utils import make_domain_knowledge
 from .graph import discover_graph
 from .baselines import baseline_summary
 
@@ -59,10 +63,13 @@ def run_one(
     true_graph: Optional[pd.DataFrame] = None,
     distance_mode: str = "directed",
     rng_seed: Optional[int] = None,
+    soft_knowledge: Optional[DomainKnowledge] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     if rng_seed is None:
         rng_seed = config.random_seed + repeat * 1000 + _stable_method_offset(method)
     rng = _make_rng(rng_seed)
+
+    lam = config.lambda_penalty if soft_knowledge is not None else 0.0
 
     var_names = list(data.columns)
     D_tr, D_cal = train_test_split(
@@ -113,6 +120,8 @@ def run_one(
         n_resamples=N_cal + N_test,
         rng=rng,
         distance_mode=distance_mode,
+        soft_knowledge=soft_knowledge,
+        lambda_penalty=lam,
     )
     cal_scores = all_chunk_scores[:N_cal]
     test_scores = all_chunk_scores[N_cal:]
@@ -127,7 +136,10 @@ def run_one(
     )
 
     candidate_base_scores = [
-        candidate_graph_score(G, local_graphs, subsets, distance_mode)
+        candidate_graph_score(
+            G, local_graphs, subsets, distance_mode,
+            knowledge=soft_knowledge, lambda_penalty=lam,
+        )
         for G in candidates
     ]
 
@@ -192,6 +204,8 @@ def run_one(
             subsets,
             tau,
             distance_mode=distance_mode,
+            knowledge=soft_knowledge,
+            lambda_penalty=lam,
         )
 
         claims = summarize_claims(
@@ -244,6 +258,9 @@ def run_one(
             "accepted_rate": counts["n_accepted"] / total_claims,
             "rejected_rate": counts["n_rejected"] / total_claims,
             "unresolved_rate": counts["n_unresolved"] / total_claims,
+            "knowledge_regime": config.knowledge_regime,
+            "knowledge_mode": config.knowledge_mode,
+            "lambda_penalty": config.lambda_penalty,
             **baseline_cols,
         })
 
@@ -327,14 +344,35 @@ def run_synthetic(
 
         var_names = list(data.columns)
         true_graph = numpy_to_adj(B_obs, var_names)
-        # No hard ordering constraint: the true causal order is a random
-        # permutation, not the variable-index order.
-        knowledge = make_domain_knowledge(var_names)
+
+        # Build regime knowledge.
+        empty_knowledge = make_domain_knowledge(var_names)
+        if config.knowledge_regime == "none":
+            regime_knowledge = empty_knowledge
+        elif config.knowledge_regime == "correct":
+            regime_knowledge = knowledge_from_true_graph(
+                true_graph, config.knowledge_frac, rng
+            )
+        else:  # noisy
+            correct_knowledge = knowledge_from_true_graph(
+                true_graph, config.knowledge_frac, rng
+            )
+            regime_knowledge = corrupt_knowledge(
+                correct_knowledge, config.knowledge_noise, rng
+            )
+
+        # Dispatch per knowledge_mode.
+        if config.knowledge_mode == "hard":
+            task_knowledge = regime_knowledge
+            task_soft_knowledge = None
+        else:  # soft
+            task_knowledge = empty_knowledge
+            task_soft_knowledge = regime_knowledge
 
         for method in methods:
             tasks.append({
                 "data": data,
-                "knowledge": knowledge,
+                "knowledge": task_knowledge,
                 "config": config,
                 "method": method,
                 "dataset": "synthetic",
@@ -342,6 +380,7 @@ def run_synthetic(
                 "true_graph": true_graph,
                 "distance_mode": distance_mode,
                 "rng_seed": config.random_seed + repeat * 1000 + _stable_method_offset(method),
+                "soft_knowledge": task_soft_knowledge,
             })
 
     for summary, claims, scores in _execute_tasks(tasks, n_workers):

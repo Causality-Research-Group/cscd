@@ -39,6 +39,13 @@ class ExperimentConfig:
 
     random_seed: int = 123
 
+    # Domain-knowledge experiment settings
+    knowledge_regime: str = "none"   # none | correct | noisy
+    knowledge_mode: str = "hard"     # hard | soft
+    knowledge_frac: float = 0.3      # fraction of orderable pairs turned into constraints
+    knowledge_noise: float = 0.3     # fraction of constraints corrupted in noisy regime
+    lambda_penalty: float = 1.0      # soft-penalty scale
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -83,5 +90,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stability_n_bootstraps", type=int, default=50)
     parser.add_argument("--stability_threshold", type=float, default=0.6)
     parser.add_argument("--random_seed", type=int, default=123)
+
+    # Domain-knowledge flags
+    parser.add_argument(
+        "--knowledge_regime",
+        choices=["none", "correct", "noisy"],
+        default="none",
+    )
+    parser.add_argument(
+        "--knowledge_mode",
+        choices=["hard", "soft"],
+        default="hard",
+    )
+    parser.add_argument("--knowledge_frac", type=float, default=0.3)
+    parser.add_argument("--knowledge_noise", type=float, default=0.3)
+    parser.add_argument("--lambda_penalty", type=float, default=1.0)
 
     return parser.parse_args()

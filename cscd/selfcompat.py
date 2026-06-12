@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from .graph import discover_graph
-from .utils import restrict_knowledge
+from .utils import knowledge_penalty, restrict_knowledge
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +103,8 @@ def candidate_graph_score(
     local_graphs: Dict[int, pd.DataFrame],
     subsets: List[List[str]],
     distance_mode: str = "directed",
+    knowledge=None,
+    lambda_penalty: float = 0.0,
 ) -> float:
     losses = []
     for j, subset in enumerate(subsets):
@@ -115,7 +117,10 @@ def candidate_graph_score(
                 mode=distance_mode,
             )
         )
-    return float(np.mean(losses)) if losses else 0.0
+    base = float(np.mean(losses)) if losses else 0.0
+    if knowledge is not None and lambda_penalty > 0.0:
+        base += lambda_penalty * knowledge_penalty(candidate, knowledge)
+    return base
 
 
 def calibration_scores(
@@ -128,6 +133,8 @@ def calibration_scores(
     n_resamples: int,
     rng: np.random.Generator,
     distance_mode: str = "directed",
+    soft_knowledge=None,
+    lambda_penalty: float = 0.0,
 ) -> np.ndarray:
     n = len(data_cal)
     scores = []
@@ -156,14 +163,16 @@ def calibration_scores(
                     random_state=int(rng.integers(1_000_000)),
                 )
                 A_train = train_local_graphs_dict[j]
-                losses.append(
-                    graph_distance(
-                        A_cal,
-                        A_train,
-                        subset,
-                        mode=distance_mode,
-                    )
+                d = graph_distance(
+                    A_cal,
+                    A_train,
+                    subset,
+                    mode=distance_mode,
                 )
+                if soft_knowledge is not None and lambda_penalty > 0.0:
+                    k_sub_soft = restrict_knowledge(soft_knowledge, subset)
+                    d += lambda_penalty * knowledge_penalty(A_cal, k_sub_soft)
+                losses.append(d)
             except Exception as exc:
                 logger.debug(
                     "calibration chunk %d subset %d discovery failed (%s); skipping.",
@@ -232,12 +241,17 @@ def conformal_graph_set(
     subsets: List[List[str]],
     tau: float,
     distance_mode: str = "directed",
+    knowledge=None,
+    lambda_penalty: float = 0.0,
 ) -> Tuple[List[pd.DataFrame], List[float]]:
     selected = []
     scores = []
 
     for G in candidates:
-        s = candidate_graph_score(G, local_graphs, subsets, distance_mode)
+        s = candidate_graph_score(
+            G, local_graphs, subsets, distance_mode,
+            knowledge=knowledge, lambda_penalty=lambda_penalty,
+        )
         scores.append(s)
         if s <= tau:
             selected.append(G)
