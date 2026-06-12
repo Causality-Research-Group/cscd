@@ -228,6 +228,7 @@ def run_one(
             "decision_bias_single": float("nan"),
             "decision_bias_accepted": float("nan"),
             "decision_bias_notrejected": float("nan"),
+            "decision_bias_cscd_avg": float("nan"),
             "decision_bias_naive": float("nan"),
             "decision_n_pairs": float("nan"),
         }
@@ -245,6 +246,7 @@ def run_one(
                     n_pairs=config.decision_n_pairs,
                     accepted_threshold=config.accepted_threshold,
                     rejected_threshold=config.rejected_threshold,
+                    selected_graphs=selected,
                 )
             except Exception as _dec_exc:
                 logger.warning("decision_task_summary failed: %s", _dec_exc)

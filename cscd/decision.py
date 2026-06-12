@@ -147,6 +147,7 @@ def decision_task_summary(
     n_pairs: int = 5,
     accepted_threshold: float = 0.90,
     rejected_threshold: float = 0.10,
+    selected_graphs: Optional[List[pd.DataFrame]] = None,
 ) -> Dict[str, float]:
     """Compute mean absolute bias for four adjustment strategies.
 
@@ -159,6 +160,9 @@ def decision_task_summary(
                   include parents whose claim is not rejected, exclude
                   accepted descendants (see
                   conservative_adjustment_from_claims).
+    cscd_avg    : act on the calibrated set itself — estimate the effect
+                  under each graph in C_alpha (adjusting for that graph's
+                  parents of the treatment) and average the estimates.
     naive       : no adjustment (empty set).
 
     Parameters
@@ -191,6 +195,7 @@ def decision_task_summary(
         "decision_bias_single": float("nan"),
         "decision_bias_accepted": float("nan"),
         "decision_bias_notrejected": float("nan"),
+        "decision_bias_cscd_avg": float("nan"),
         "decision_bias_naive": float("nan"),
         "decision_n_pairs": 0,
     }
@@ -231,6 +236,7 @@ def decision_task_summary(
     bias_single = []
     bias_accepted = []
     bias_notrejected = []
+    bias_cscd_avg = []
     bias_naive = []
 
     for t_name, y_name in pairs:
@@ -260,10 +266,29 @@ def decision_task_summary(
             logger.debug("decision_task_summary OLS failed for (%s, %s): %s", t_name, y_name, exc)
             continue
 
+        est_cscd_avg = float("nan")
+        if selected_graphs:
+            per_graph = []
+            for G in selected_graphs:
+                try:
+                    per_graph.append(
+                        estimate_effect_ols(
+                            data_eval, t_name, y_name,
+                            parents_from_graph(G, t_name),
+                        )
+                    )
+                except Exception as exc:
+                    logger.debug(
+                        "cscd_avg OLS failed for (%s, %s): %s", t_name, y_name, exc
+                    )
+            if per_graph:
+                est_cscd_avg = float(np.mean(per_graph))
+
         bias_oracle.append(abs(est_oracle - theta))
         bias_single.append(abs(est_single - theta))
         bias_accepted.append(abs(est_accepted - theta))
         bias_notrejected.append(abs(est_notrejected - theta))
+        bias_cscd_avg.append(abs(est_cscd_avg - theta))
         bias_naive.append(abs(est_naive - theta))
 
     n_eval = len(bias_oracle)
@@ -275,6 +300,7 @@ def decision_task_summary(
         "decision_bias_single": float(np.mean(bias_single)),
         "decision_bias_accepted": float(np.mean(bias_accepted)),
         "decision_bias_notrejected": float(np.mean(bias_notrejected)),
+        "decision_bias_cscd_avg": float(np.nanmean(bias_cscd_avg)) if bias_cscd_avg else float("nan"),
         "decision_bias_naive": float(np.mean(bias_naive)),
         "decision_n_pairs": n_eval,
     }

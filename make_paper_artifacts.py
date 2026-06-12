@@ -422,11 +422,11 @@ def make_figure_decision(df: pd.DataFrame, outpath: str) -> None:
     sub10 = df[df["alpha"].round(3) == 0.10]
     methods_present = [m for m in METHOD_ORDER if m in sub10["method"].values]
 
-    bias_cols = ["decision_bias_oracle", "decision_bias_notrejected",
-                 "decision_bias_accepted", "decision_bias_single",
-                 "decision_bias_naive"]
-    bias_labels = ["Oracle", "CSCD not-rejected", "CSCD accepted",
-                   "Single run", "Naive"]
+    bias_cols = ["decision_bias_oracle", "decision_bias_cscd_avg",
+                 "decision_bias_notrejected", "decision_bias_accepted",
+                 "decision_bias_single", "decision_bias_naive"]
+    bias_labels = ["Oracle", "CSCD set-averaged", "CSCD not-rejected",
+                   "CSCD accepted", "Single run", "Naive"]
     present_cols = [c for c in bias_cols if c in sub10.columns]
     present_labels = [bias_labels[bias_cols.index(c)] for c in present_cols]
 
@@ -486,7 +486,7 @@ NUMERIC_COLS = [
     "uncal_precision", "uncal_recall", "uncal_unresolved_rate",
     "uncal_n_selected_graphs", "decision_bias_oracle", "decision_bias_single",
     "decision_bias_accepted", "decision_bias_notrejected",
-    "decision_bias_naive", "decision_n_pairs",
+    "decision_bias_cscd_avg", "decision_bias_naive", "decision_n_pairs",
 ]
 
 
@@ -780,10 +780,10 @@ def print_checks(df_main: pd.DataFrame) -> None:
         print(f"    {method.upper()}: {status}", flush=True)
 
     # (iii) Ordering of decision biases: accepted vs single vs naive
-    print("\n(iii) Decision bias on confounded pairs (not-rejected < single) at alpha=0.10:", flush=True)
+    print("\n(iii) Decision bias on confounded pairs (cscd_avg < single) at alpha=0.10:", flush=True)
     bias_cols_check = ["decision_bias_oracle", "decision_bias_accepted",
-                       "decision_bias_notrejected", "decision_bias_single",
-                       "decision_bias_naive"]
+                       "decision_bias_notrejected", "decision_bias_cscd_avg",
+                       "decision_bias_single", "decision_bias_naive"]
     for method in methods_present:
         sub_m = sub10[sub10["method"] == method]
         if sub_m.empty:
@@ -798,24 +798,25 @@ def print_checks(df_main: pd.DataFrame) -> None:
         b_oracle = vals.get("decision_bias_oracle", float("nan"))
         b_accept = vals.get("decision_bias_accepted", float("nan"))
         b_notrej = vals.get("decision_bias_notrejected", float("nan"))
+        b_avg    = vals.get("decision_bias_cscd_avg", float("nan"))
         b_single = vals.get("decision_bias_single", float("nan"))
         b_naive  = vals.get("decision_bias_naive", float("nan"))
-        # Primary reviewer claim: the calibrated claim partition yields a
-        # better adjustment decision than a single discovered graph.  The
-        # conservative not-rejected policy is the headline; strict
-        # accepted-only and naive are context.
+        # Primary reviewer claim: acting on the calibrated set (averaging
+        # the effect estimate over C_alpha) beats acting on a single
+        # discovered graph.  Claim-partition policies and naive are context.
         primary_ok = (
-            not math.isnan(b_notrej) and not math.isnan(b_single)
-            and b_notrej < b_single
+            not math.isnan(b_avg) and not math.isnan(b_single)
+            and b_avg < b_single
         )
         naive_note = ""
-        if not math.isnan(b_naive) and not math.isnan(b_notrej):
-            naive_note = "; not-rejected < naive" if b_notrej < b_naive else "; WARNING not-rejected >= naive"
+        if not math.isnan(b_naive) and not math.isnan(b_avg):
+            naive_note = "; cscd_avg < naive" if b_avg < b_naive else "; WARNING cscd_avg >= naive"
         print(
-            f"    {method.upper()}: oracle={b_oracle:.4f}, notrejected={b_notrej:.4f}, "
-            f"accepted={b_accept:.4f}, single={b_single:.4f}, naive={b_naive:.4f} → "
-            + ("PASS (not-rejected < single)" if primary_ok
-               else "FAIL (not-rejected >= single)")
+            f"    {method.upper()}: oracle={b_oracle:.4f}, cscd_avg={b_avg:.4f}, "
+            f"notrejected={b_notrej:.4f}, accepted={b_accept:.4f}, "
+            f"single={b_single:.4f}, naive={b_naive:.4f} → "
+            + ("PASS (cscd_avg < single)" if primary_ok
+               else "FAIL (cscd_avg >= single)")
             + naive_note,
             flush=True,
         )
