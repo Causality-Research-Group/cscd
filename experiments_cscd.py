@@ -50,6 +50,7 @@ def main() -> None:
         knowledge_frac=args.knowledge_frac,
         knowledge_noise=args.knowledge_noise,
         lambda_penalty=args.lambda_penalty,
+        decision_n_pairs=args.decision_n_pairs,
     )
 
     methods = [m.lower() for m in args.methods]

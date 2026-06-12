@@ -46,6 +46,9 @@ class ExperimentConfig:
     knowledge_noise: float = 0.3     # fraction of constraints corrupted in noisy regime
     lambda_penalty: float = 1.0      # soft-penalty scale
 
+    # Downstream decision task settings
+    decision_n_pairs: int = 5        # max (treatment, outcome) pairs per alpha
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -105,5 +108,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--knowledge_frac", type=float, default=0.3)
     parser.add_argument("--knowledge_noise", type=float, default=0.3)
     parser.add_argument("--lambda_penalty", type=float, default=1.0)
+    parser.add_argument("--decision_n_pairs", type=int, default=5)
 
     return parser.parse_args()

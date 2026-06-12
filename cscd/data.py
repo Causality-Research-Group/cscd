@@ -60,7 +60,29 @@ def simulate_linear_sem(
     n: int,
     noise: str,
     rng: np.random.Generator,
-) -> pd.DataFrame:
+    return_weights: bool = False,
+):
+    """Simulate data from a linear SEM with adjacency matrix B.
+
+    Parameters
+    ----------
+    B : np.ndarray
+        Binary adjacency matrix; B[i, j] == 1 means i -> j.
+    n : int
+        Number of samples.
+    noise : str
+        Noise distribution: 'gaussian', 'uniform', or 'laplace'.
+    rng : np.random.Generator
+        Random number generator.
+    return_weights : bool, optional
+        If True, return (data, W) where W[i, j] is the linear coefficient
+        for the edge i -> j.  Default False preserves backward compatibility.
+
+    Returns
+    -------
+    pd.DataFrame or (pd.DataFrame, np.ndarray)
+        Simulated data frame, and optionally the weight matrix W.
+    """
     p = B.shape[0]
     W = np.zeros((p, p))
 
@@ -85,7 +107,10 @@ def simulate_linear_sem(
 
         X[:, j] = signal + eps
 
-    return pd.DataFrame(X, columns=[f"X{k}" for k in range(p)])
+    data = pd.DataFrame(X, columns=[f"X{k}" for k in range(p)])
+    if return_weights:
+        return data, W
+    return data
 
 
 def hide_latents(

@@ -26,6 +26,7 @@ from .utils import (
     numpy_to_adj,
 )
 from .metrics import accepted_precision_recall, shd, skeleton_f1, status_counts, summarize_claims
+from .decision import decision_task_summary
 from .plotting import make_summary_table, plot_calibration, plot_claim_rates, plot_precision_recall, plot_raw_self_compatibility, plot_score_distributions, plot_top_claims, save_and_plot
 from .selfcompat import (
     calibration_scores,
@@ -64,6 +65,7 @@ def run_one(
     distance_mode: str = "directed",
     rng_seed: Optional[int] = None,
     soft_knowledge: Optional[DomainKnowledge] = None,
+    sem_weights: Optional[np.ndarray] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     if rng_seed is None:
         rng_seed = config.random_seed + repeat * 1000 + _stable_method_offset(method)
@@ -218,6 +220,35 @@ def run_one(
         counts = status_counts(claims)
         pr = accepted_precision_recall(claims, true_graph)
 
+        # Downstream decision task: estimate treatment-effect bias under
+        # four adjustment strategies.  Only available when sem_weights and
+        # true_graph are both provided (fully observed synthetic setting).
+        _decision_nan: Dict[str, float] = {
+            "decision_bias_oracle": float("nan"),
+            "decision_bias_single": float("nan"),
+            "decision_bias_accepted": float("nan"),
+            "decision_bias_naive": float("nan"),
+            "decision_n_pairs": float("nan"),
+        }
+        if sem_weights is not None and true_graph is not None:
+            _dec_rng = _make_rng(rng_seed + 7919 + int(alpha * 1000))
+            try:
+                decision_cols = decision_task_summary(
+                    data_eval=data,
+                    W=sem_weights,
+                    var_names=var_names,
+                    true_graph=true_graph,
+                    full_graph=full_graph,
+                    claims=claims,
+                    rng=_dec_rng,
+                    n_pairs=config.decision_n_pairs,
+                )
+            except Exception as _dec_exc:
+                logger.warning("decision_task_summary failed: %s", _dec_exc)
+                decision_cols = _decision_nan
+        else:
+            decision_cols = _decision_nan
+
         if true_graph is not None:
             graph_shd = shd(full_graph, true_graph)
             sk_prec, sk_rec, sk_f1 = skeleton_f1(full_graph, true_graph)
@@ -262,6 +293,7 @@ def run_one(
             "knowledge_mode": config.knowledge_mode,
             "lambda_penalty": config.lambda_penalty,
             **baseline_cols,
+            **decision_cols,
         })
 
         claims = claims.copy()
@@ -334,13 +366,19 @@ def run_synthetic(
             rng,
         )
 
-        data = simulate_linear_sem(
+        data, W_full = simulate_linear_sem(
             B,
             n=config.n,
             noise=config.noise,
             rng=rng,
+            return_weights=True,
         )
         data, B_obs = hide_latents(data, B, config.latent_fraction, rng)
+
+        # sem_weights are only passed in the fully observed setting; when
+        # latents are hidden the W indexing no longer matches the observed
+        # variable order so we pass None to disable the decision task.
+        sem_weights_for_task = W_full if config.latent_fraction == 0.0 else None
 
         var_names = list(data.columns)
         true_graph = numpy_to_adj(B_obs, var_names)
@@ -381,6 +419,7 @@ def run_synthetic(
                 "distance_mode": distance_mode,
                 "rng_seed": config.random_seed + repeat * 1000 + _stable_method_offset(method),
                 "soft_knowledge": task_soft_knowledge,
+                "sem_weights": sem_weights_for_task,
             })
 
     for summary, claims, scores in _execute_tasks(tasks, n_workers):
