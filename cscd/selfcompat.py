@@ -133,21 +133,33 @@ def calibration_scores(
     n_resamples: int,
     rng: np.random.Generator,
     distance_mode: str = "directed",
+    chunk_size: Optional[int] = None,
     soft_knowledge=None,
     lambda_penalty: float = 0.0,
 ) -> np.ndarray:
     n = len(data_cal)
     scores = []
 
-    # Partition D_cal into n_resamples disjoint chunks.  Bootstrap resampling
-    # (with replacement) would break the exchangeability of (A_1,...,A_N,A_test)
+    # Partition D_cal into disjoint chunks.  Bootstrap resampling (with
+    # replacement) would break the exchangeability of (A_1,...,A_N,A_test)
     # that underlies Proposition 1.
+    #
+    # chunk_size=None (default): use max(1, n // n_resamples) as before.
+    # chunk_size=k (equal-chunks mode): fix each chunk at k rows and iterate
+    # over only min(n_resamples, n // k) FULL chunks; partial trailing chunks
+    # are skipped so every chunk is exactly size k.
     perm = rng.permutation(n)
-    chunk_size = max(1, n // n_resamples)
+    if chunk_size is None:
+        chunk_size = max(1, n // n_resamples)
+        n_iters = n_resamples
+    else:
+        # Only as many full chunks of size chunk_size as D_cal can supply,
+        # capped at n_resamples.
+        n_iters = min(n_resamples, n // chunk_size)
 
-    for b in range(n_resamples):
+    for b in range(n_iters):
         start = b * chunk_size
-        end = min(start + chunk_size, n)
+        end = start + chunk_size  # always exactly chunk_size rows
         if start >= n:
             break
         data_b = data_cal.iloc[perm[start:end]].reset_index(drop=True)

@@ -51,6 +51,9 @@ def main() -> None:
         knowledge_noise=args.knowledge_noise,
         lambda_penalty=args.lambda_penalty,
         decision_n_pairs=args.decision_n_pairs,
+        equal_chunks=args.equal_chunks,
+        train_size=args.train_size,
+        cal_chunk_size=args.cal_chunk_size,
     )
 
     methods = [m.lower() for m in args.methods]

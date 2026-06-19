@@ -74,12 +74,21 @@ def run_one(
     lam = config.lambda_penalty if soft_knowledge is not None else 0.0
 
     var_names = list(data.columns)
-    D_tr, D_cal = train_test_split(
-        data,
-        test_size=0.5,
-        shuffle=True,
-        random_state=config.random_seed + repeat,
-    )
+    if config.train_size is not None:
+        # Fixed absolute D_train size; D_cal gets the remainder.
+        D_tr, D_cal = train_test_split(
+            data,
+            train_size=config.train_size,
+            shuffle=True,
+            random_state=config.random_seed + repeat,
+        )
+    else:
+        D_tr, D_cal = train_test_split(
+            data,
+            test_size=0.5,
+            shuffle=True,
+            random_state=config.random_seed + repeat,
+        )
     D_tr = D_tr.reset_index(drop=True)
     D_cal = D_cal.reset_index(drop=True)
 
@@ -112,6 +121,15 @@ def run_one(
     # a deterministic function of (N, alpha), identical across base methods.
     N_cal = config.n_calibration_resamples
     N_test = config.n_test_chunks
+    # In equal_chunks mode each calibration chunk is exactly len(D_tr) rows so
+    # scores reflect deployment-size instability.  In the default mode chunk_size
+    # is None and calibration_scores uses its internal heuristic (n // n_resamples).
+    if config.cal_chunk_size is not None:
+        cal_chunk_size = config.cal_chunk_size
+    elif config.equal_chunks:
+        cal_chunk_size = len(D_tr)
+    else:
+        cal_chunk_size = None
     all_chunk_scores = calibration_scores(
         D_cal,
         subsets,
@@ -122,11 +140,27 @@ def run_one(
         n_resamples=N_cal + N_test,
         rng=rng,
         distance_mode=distance_mode,
+        chunk_size=cal_chunk_size,
         soft_knowledge=soft_knowledge,
         lambda_penalty=lam,
     )
-    cal_scores = all_chunk_scores[:N_cal]
-    test_scores = all_chunk_scores[N_cal:]
+    # With equal_chunks the number of returned scores may be < N_cal+N_test if
+    # D_cal is too small to supply that many full chunks of size len(D_tr).
+    # Allocate the first ~half to calibration and the rest to test so neither
+    # slice is empty.  In the normal case (enough chunks) this is identical to
+    # the fixed [:N_cal] / [N_cal:] slicing.
+    n_returned = len(all_chunk_scores)
+    if n_returned >= N_cal + N_test:
+        # Normal path: enough chunks.
+        cal_scores = all_chunk_scores[:N_cal]
+        test_scores = all_chunk_scores[N_cal:]
+    else:
+        # Fewer chunks than requested: split roughly in half, ensuring both
+        # slices have at least 1 element (n_returned >= 2 is needed; if only 1
+        # chunk came back, put it in cal and test is empty — exceedance will be nan).
+        n_cal_eff = max(1, n_returned // 2)
+        cal_scores = all_chunk_scores[:n_cal_eff]
+        test_scores = all_chunk_scores[n_cal_eff:]
 
     candidates = generate_candidate_graphs(
         D_tr,

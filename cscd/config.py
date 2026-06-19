@@ -46,6 +46,11 @@ class ExperimentConfig:
     knowledge_noise: float = 0.3     # fraction of constraints corrupted in noisy regime
     lambda_penalty: float = 1.0      # soft-penalty scale
 
+    # Equal-sized calibration chunks mode
+    equal_chunks: bool = False
+    train_size: Optional[int] = None  # absolute D_train rows; None => 50/50 split
+    cal_chunk_size: Optional[int] = None  # explicit calibration-chunk size; overrides equal_chunks
+
     # Downstream decision task settings
     decision_n_pairs: int = 5        # max (treatment, outcome) pairs per alpha
 
@@ -109,5 +114,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--knowledge_noise", type=float, default=0.3)
     parser.add_argument("--lambda_penalty", type=float, default=1.0)
     parser.add_argument("--decision_n_pairs", type=int, default=5)
+
+    # Equal-sized calibration chunks
+    parser.add_argument(
+        "--equal_chunks",
+        action="store_true",
+        default=False,
+        help="Use calibration chunks the same size as D_train.",
+    )
+    parser.add_argument(
+        "--train_size",
+        type=int,
+        default=None,
+        help="Absolute number of D_train rows; None keeps 50/50 split.",
+    )
+    parser.add_argument(
+        "--cal_chunk_size",
+        type=int,
+        default=None,
+        help="Explicit calibration-chunk size (rows); overrides --equal_chunks.",
+    )
 
     return parser.parse_args()
