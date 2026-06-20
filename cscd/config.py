@@ -22,6 +22,7 @@ class ExperimentConfig:
     n_subsets: int = 30
     subset_frac: float = 0.5
     n_calibration_resamples: int = 20   # N disjoint cal chunks; paper uses 20
+    n_test_chunks: int = 20             # held-out chunks for empirical exceedance
     n_candidate_graphs: int = 80
 
     alpha_values: Tuple[float, ...] = (0.05, 0.10, 0.20)
@@ -33,7 +34,25 @@ class ExperimentConfig:
     independence_test: str = "fisherz"
     ges_score: str = "local_score_BIC"
 
+    stability_n_bootstraps: int = 50
+    stability_threshold: float = 0.6
+
     random_seed: int = 123
+
+    # Domain-knowledge experiment settings
+    knowledge_regime: str = "none"   # none | correct | noisy
+    knowledge_mode: str = "hard"     # hard | soft
+    knowledge_frac: float = 0.3      # fraction of orderable pairs turned into constraints
+    knowledge_noise: float = 0.3     # fraction of constraints corrupted in noisy regime
+    lambda_penalty: float = 1.0      # soft-penalty scale
+
+    # Equal-sized calibration chunks mode
+    equal_chunks: bool = False
+    train_size: Optional[int] = None  # absolute D_train rows; None => 50/50 split
+    cal_chunk_size: Optional[int] = None  # explicit calibration-chunk size; overrides equal_chunks
+
+    # Downstream decision task settings
+    decision_n_pairs: int = 5        # max (treatment, outcome) pairs per alpha
 
 
 def parse_args() -> argparse.Namespace:
@@ -63,6 +82,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n_subsets", type=int, default=30)
     parser.add_argument("--subset_frac", type=float, default=0.5)
     parser.add_argument("--n_calibration_resamples", type=int, default=20)
+    parser.add_argument("--n_test_chunks", type=int, default=20)
     parser.add_argument("--n_candidate_graphs", type=int, default=80)
 
     parser.add_argument("--pc_alpha", type=float, default=0.05)
@@ -75,6 +95,44 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--distance_mode", choices=["directed", "skeleton"], default="directed"
     )
+    parser.add_argument("--stability_n_bootstraps", type=int, default=50)
+    parser.add_argument("--stability_threshold", type=float, default=0.6)
     parser.add_argument("--random_seed", type=int, default=123)
+
+    # Domain-knowledge flags
+    parser.add_argument(
+        "--knowledge_regime",
+        choices=["none", "correct", "noisy"],
+        default="none",
+    )
+    parser.add_argument(
+        "--knowledge_mode",
+        choices=["hard", "soft"],
+        default="hard",
+    )
+    parser.add_argument("--knowledge_frac", type=float, default=0.3)
+    parser.add_argument("--knowledge_noise", type=float, default=0.3)
+    parser.add_argument("--lambda_penalty", type=float, default=1.0)
+    parser.add_argument("--decision_n_pairs", type=int, default=5)
+
+    # Equal-sized calibration chunks
+    parser.add_argument(
+        "--equal_chunks",
+        action="store_true",
+        default=False,
+        help="Use calibration chunks the same size as D_train.",
+    )
+    parser.add_argument(
+        "--train_size",
+        type=int,
+        default=None,
+        help="Absolute number of D_train rows; None keeps 50/50 split.",
+    )
+    parser.add_argument(
+        "--cal_chunk_size",
+        type=int,
+        default=None,
+        help="Explicit calibration-chunk size (rows); overrides --equal_chunks.",
+    )
 
     return parser.parse_args()

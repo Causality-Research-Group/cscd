@@ -1,0 +1,19 @@
+\begin{table}[t]
+\centering\small
+\begin{tabular}{lcccccc}
+\toprule
+Regime & \multicolumn{3}{c}{PC} & \multicolumn{3}{c}{FCI} \\
+\cmidrule(lr){2-4}
+\cmidrule(lr){5-7}
+Regime & Prec. & Rec. & Unres. & Prec. & Rec. & Unres. \\
+\midrule
+None & $0.770 \pm 0.038$ & $0.660 \pm 0.057$ & $0.061 \pm 0.008$ & $0.572 \pm 0.024$ & $0.887 \pm 0.053$ & $0.051 \pm 0.007$ \\
+correct + hard & $0.872 \pm 0.044$ & $0.657 \pm 0.061$ & $0.051 \pm 0.007$ & $0.658 \pm 0.019$ & $0.892 \pm 0.050$ & $0.041 \pm 0.005$ \\
+correct + soft & $0.786 \pm 0.045$ & $0.611 \pm 0.051$ & $0.067 \pm 0.006$ & $0.597 \pm 0.024$ & $0.877 \pm 0.053$ & $0.066 \pm 0.013$ \\
+noisy + hard & $0.809 \pm 0.056$ & $0.622 \pm 0.059$ & $0.049 \pm 0.008$ & $0.606 \pm 0.023$ & $0.816 \pm 0.055$ & $0.041 \pm 0.006$ \\
+noisy + soft & $0.809 \pm 0.038$ & $0.601 \pm 0.052$ & $0.071 \pm 0.008$ & $0.598 \pm 0.023$ & $0.887 \pm 0.049$ & $0.063 \pm 0.013$ \\
+\bottomrule
+\end{tabular}
+\caption{Effect of background knowledge at $\alpha=0.10$. Mean $\pm$ standard error over repeats.}
+\label{tab:knowledge}
+\end{table}

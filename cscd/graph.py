@@ -108,6 +108,7 @@ def discover_graph(
                 stable=True,
                 node_names=var_names,
                 verbose=False,
+                show_progress=False,
             )
         except TypeError:
             cg = pc(
@@ -129,6 +130,7 @@ def discover_graph(
                 alpha=config.fci_alpha,
                 verbose=False,
                 node_names=var_names,
+                show_progress=False,
             )
         except TypeError:
             g, _ = fci(

@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from .graph import discover_graph
-from .utils import restrict_knowledge
+from .utils import knowledge_penalty, restrict_knowledge
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +103,8 @@ def candidate_graph_score(
     local_graphs: Dict[int, pd.DataFrame],
     subsets: List[List[str]],
     distance_mode: str = "directed",
+    knowledge=None,
+    lambda_penalty: float = 0.0,
 ) -> float:
     losses = []
     for j, subset in enumerate(subsets):
@@ -115,7 +117,10 @@ def candidate_graph_score(
                 mode=distance_mode,
             )
         )
-    return float(np.mean(losses)) if losses else 0.0
+    base = float(np.mean(losses)) if losses else 0.0
+    if knowledge is not None and lambda_penalty > 0.0:
+        base += lambda_penalty * knowledge_penalty(candidate, knowledge)
+    return base
 
 
 def calibration_scores(
@@ -128,19 +133,33 @@ def calibration_scores(
     n_resamples: int,
     rng: np.random.Generator,
     distance_mode: str = "directed",
+    chunk_size: Optional[int] = None,
+    soft_knowledge=None,
+    lambda_penalty: float = 0.0,
 ) -> np.ndarray:
     n = len(data_cal)
     scores = []
 
-    # Partition D_cal into n_resamples disjoint chunks.  Bootstrap resampling
-    # (with replacement) would break the exchangeability of (A_1,...,A_N,A_test)
+    # Partition D_cal into disjoint chunks.  Bootstrap resampling (with
+    # replacement) would break the exchangeability of (A_1,...,A_N,A_test)
     # that underlies Proposition 1.
+    #
+    # chunk_size=None (default): use max(1, n // n_resamples) as before.
+    # chunk_size=k (equal-chunks mode): fix each chunk at k rows and iterate
+    # over only min(n_resamples, n // k) FULL chunks; partial trailing chunks
+    # are skipped so every chunk is exactly size k.
     perm = rng.permutation(n)
-    chunk_size = max(1, n // n_resamples)
+    if chunk_size is None:
+        chunk_size = max(1, n // n_resamples)
+        n_iters = n_resamples
+    else:
+        # Only as many full chunks of size chunk_size as D_cal can supply,
+        # capped at n_resamples.
+        n_iters = min(n_resamples, n // chunk_size)
 
-    for b in range(n_resamples):
+    for b in range(n_iters):
         start = b * chunk_size
-        end = min(start + chunk_size, n)
+        end = start + chunk_size  # always exactly chunk_size rows
         if start >= n:
             break
         data_b = data_cal.iloc[perm[start:end]].reset_index(drop=True)
@@ -156,14 +175,16 @@ def calibration_scores(
                     random_state=int(rng.integers(1_000_000)),
                 )
                 A_train = train_local_graphs_dict[j]
-                losses.append(
-                    graph_distance(
-                        A_cal,
-                        A_train,
-                        subset,
-                        mode=distance_mode,
-                    )
+                d = graph_distance(
+                    A_cal,
+                    A_train,
+                    subset,
+                    mode=distance_mode,
                 )
+                if soft_knowledge is not None and lambda_penalty > 0.0:
+                    k_sub_soft = restrict_knowledge(soft_knowledge, subset)
+                    d += lambda_penalty * knowledge_penalty(A_cal, k_sub_soft)
+                losses.append(d)
             except Exception as exc:
                 logger.debug(
                     "calibration chunk %d subset %d discovery failed (%s); skipping.",
@@ -232,12 +253,17 @@ def conformal_graph_set(
     subsets: List[List[str]],
     tau: float,
     distance_mode: str = "directed",
+    knowledge=None,
+    lambda_penalty: float = 0.0,
 ) -> Tuple[List[pd.DataFrame], List[float]]:
     selected = []
     scores = []
 
     for G in candidates:
-        s = candidate_graph_score(G, local_graphs, subsets, distance_mode)
+        s = candidate_graph_score(
+            G, local_graphs, subsets, distance_mode,
+            knowledge=knowledge, lambda_penalty=lambda_penalty,
+        )
         scores.append(s)
         if s <= tau:
             selected.append(G)

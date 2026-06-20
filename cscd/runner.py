@@ -19,8 +19,14 @@ from .data import (
     sachs_reference_graph,
     simulate_linear_sem,
 )
-from .utils import numpy_to_adj
+from .utils import (
+    corrupt_knowledge,
+    knowledge_from_true_graph,
+    make_domain_knowledge,
+    numpy_to_adj,
+)
 from .metrics import accepted_precision_recall, shd, skeleton_f1, status_counts, summarize_claims
+from .decision import decision_task_summary
 from .plotting import make_summary_table, plot_calibration, plot_claim_rates, plot_precision_recall, plot_raw_self_compatibility, plot_score_distributions, plot_top_claims, save_and_plot
 from .selfcompat import (
     calibration_scores,
@@ -32,8 +38,8 @@ from .selfcompat import (
     self_compatibility_score_among_local_graphs,
     train_local_graphs,
 )
-from .utils import make_domain_knowledge
 from .graph import discover_graph
+from .baselines import baseline_summary
 
 
 def _stable_method_offset(method: str) -> int:
@@ -58,18 +64,31 @@ def run_one(
     true_graph: Optional[pd.DataFrame] = None,
     distance_mode: str = "directed",
     rng_seed: Optional[int] = None,
+    soft_knowledge: Optional[DomainKnowledge] = None,
+    sem_weights: Optional[np.ndarray] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     if rng_seed is None:
         rng_seed = config.random_seed + repeat * 1000 + _stable_method_offset(method)
     rng = _make_rng(rng_seed)
 
+    lam = config.lambda_penalty if soft_knowledge is not None else 0.0
+
     var_names = list(data.columns)
-    D_tr, D_cal = train_test_split(
-        data,
-        test_size=0.5,
-        shuffle=True,
-        random_state=config.random_seed + repeat,
-    )
+    if config.train_size is not None:
+        # Fixed absolute D_train size; D_cal gets the remainder.
+        D_tr, D_cal = train_test_split(
+            data,
+            train_size=config.train_size,
+            shuffle=True,
+            random_state=config.random_seed + repeat,
+        )
+    else:
+        D_tr, D_cal = train_test_split(
+            data,
+            test_size=0.5,
+            shuffle=True,
+            random_state=config.random_seed + repeat,
+        )
     D_tr = D_tr.reset_index(drop=True)
     D_cal = D_cal.reset_index(drop=True)
 
@@ -95,17 +114,53 @@ def run_one(
         distance_mode=distance_mode,
     )
 
-    cal_scores = calibration_scores(
+    # Compute scores on N + N_test disjoint, equal-sized chunks of D_cal.
+    # The first N set the conformal threshold; the held-out remainder provide
+    # an honest estimate of the exceedance rate P(A_test > tau_alpha).
+    # Evaluating exceedance on the calibration scores themselves would make it
+    # a deterministic function of (N, alpha), identical across base methods.
+    N_cal = config.n_calibration_resamples
+    N_test = config.n_test_chunks
+    # In equal_chunks mode each calibration chunk is exactly len(D_tr) rows so
+    # scores reflect deployment-size instability.  In the default mode chunk_size
+    # is None and calibration_scores uses its internal heuristic (n // n_resamples).
+    if config.cal_chunk_size is not None:
+        cal_chunk_size = config.cal_chunk_size
+    elif config.equal_chunks:
+        cal_chunk_size = len(D_tr)
+    else:
+        cal_chunk_size = None
+    all_chunk_scores = calibration_scores(
         D_cal,
         subsets,
         local_graphs,
         knowledge,
         method,
         config,
-        n_resamples=config.n_calibration_resamples,
+        n_resamples=N_cal + N_test,
         rng=rng,
         distance_mode=distance_mode,
+        chunk_size=cal_chunk_size,
+        soft_knowledge=soft_knowledge,
+        lambda_penalty=lam,
     )
+    # With equal_chunks the number of returned scores may be < N_cal+N_test if
+    # D_cal is too small to supply that many full chunks of size len(D_tr).
+    # Allocate the first ~half to calibration and the rest to test so neither
+    # slice is empty.  In the normal case (enough chunks) this is identical to
+    # the fixed [:N_cal] / [N_cal:] slicing.
+    n_returned = len(all_chunk_scores)
+    if n_returned >= N_cal + N_test:
+        # Normal path: enough chunks.
+        cal_scores = all_chunk_scores[:N_cal]
+        test_scores = all_chunk_scores[N_cal:]
+    else:
+        # Fewer chunks than requested: split roughly in half, ensuring both
+        # slices have at least 1 element (n_returned >= 2 is needed; if only 1
+        # chunk came back, put it in cal and test is empty — exceedance will be nan).
+        n_cal_eff = max(1, n_returned // 2)
+        cal_scores = all_chunk_scores[:n_cal_eff]
+        test_scores = all_chunk_scores[n_cal_eff:]
 
     candidates = generate_candidate_graphs(
         D_tr,
@@ -117,7 +172,10 @@ def run_one(
     )
 
     candidate_base_scores = [
-        candidate_graph_score(G, local_graphs, subsets, distance_mode)
+        candidate_graph_score(
+            G, local_graphs, subsets, distance_mode,
+            knowledge=soft_knowledge, lambda_penalty=lam,
+        )
         for G in candidates
     ]
 
@@ -127,6 +185,20 @@ def run_one(
         knowledge=knowledge,
         config=config,
         random_state=int(rng.integers(1_000_000)),
+    )
+
+    baseline_cols = baseline_summary(
+        full_graph=full_graph,
+        data_train=D_tr,
+        knowledge=knowledge,
+        method=method,
+        config=config,
+        rng=rng,
+        candidates=candidates,
+        candidate_scores=candidate_base_scores,
+        raw_self_compat=raw_self_compat,
+        var_names=var_names,
+        true_graph=true_graph,
     )
 
     summary_rows = []
@@ -139,6 +211,15 @@ def run_one(
             "method": method,
             "repeat": repeat,
             "score_type": "calibration",
+            "score": float(s),
+        })
+
+    for s in test_scores:
+        score_rows.append({
+            "dataset": dataset,
+            "method": method,
+            "repeat": repeat,
+            "score_type": "test",
             "score": float(s),
         })
 
@@ -159,6 +240,8 @@ def run_one(
             subsets,
             tau,
             distance_mode=distance_mode,
+            knowledge=soft_knowledge,
+            lambda_penalty=lam,
         )
 
         claims = summarize_claims(
@@ -171,6 +254,40 @@ def run_one(
         counts = status_counts(claims)
         pr = accepted_precision_recall(claims, true_graph)
 
+        # Downstream decision task: estimate treatment-effect bias under
+        # four adjustment strategies.  Only available when sem_weights and
+        # true_graph are both provided (fully observed synthetic setting).
+        _decision_nan: Dict[str, float] = {
+            "decision_bias_oracle": float("nan"),
+            "decision_bias_single": float("nan"),
+            "decision_bias_accepted": float("nan"),
+            "decision_bias_notrejected": float("nan"),
+            "decision_bias_cscd_avg": float("nan"),
+            "decision_bias_naive": float("nan"),
+            "decision_n_pairs": float("nan"),
+        }
+        if sem_weights is not None and true_graph is not None:
+            _dec_rng = _make_rng(rng_seed + 7919 + int(alpha * 1000))
+            try:
+                decision_cols = decision_task_summary(
+                    data_eval=data,
+                    W=sem_weights,
+                    var_names=var_names,
+                    true_graph=true_graph,
+                    full_graph=full_graph,
+                    claims=claims,
+                    rng=_dec_rng,
+                    n_pairs=config.decision_n_pairs,
+                    accepted_threshold=config.accepted_threshold,
+                    rejected_threshold=config.rejected_threshold,
+                    selected_graphs=selected,
+                )
+            except Exception as _dec_exc:
+                logger.warning("decision_task_summary failed: %s", _dec_exc)
+                decision_cols = _decision_nan
+        else:
+            decision_cols = _decision_nan
+
         if true_graph is not None:
             graph_shd = shd(full_graph, true_graph)
             sk_prec, sk_rec, sk_f1 = skeleton_f1(full_graph, true_graph)
@@ -178,12 +295,16 @@ def run_one(
             graph_shd = np.nan
             sk_prec, sk_rec, sk_f1 = np.nan, np.nan, np.nan
 
-        # Calibration check (Proposition 1): fraction of cal scores exceeding
-        # τ_α should be approximately α.  tau=inf when k>N, in which case all
-        # scores are ≤ τ and the empirical rate is 0.
+        # Calibration check (Proposition 1): fraction of *held-out* chunk
+        # scores exceeding τ_α should be ≈ α.  tau=inf when k>N, in which case
+        # all scores are ≤ τ and the empirical rate is 0.
         finite_tau = np.isfinite(tau)
-        cal_exceed_rate = float(np.mean(cal_scores > tau)) if finite_tau else 0.0
+        if len(test_scores) > 0:
+            cal_exceed_rate = float(np.mean(test_scores > tau)) if finite_tau else 0.0
+        else:
+            cal_exceed_rate = float("nan")
         calibration_error = cal_exceed_rate - alpha
+        insample_exceed_rate = float(np.mean(cal_scores > tau)) if finite_tau else 0.0
 
         total_claims = len(var_names) * (len(var_names) - 1)
         summary_rows.append({
@@ -196,6 +317,7 @@ def run_one(
             "n_selected_graphs": len(selected),
             "candidate_accept_rate": float(np.mean(np.array(candidate_scores) <= tau)),
             "cal_exceed_rate": cal_exceed_rate,
+            "insample_exceed_rate": insample_exceed_rate,
             "calibration_error": calibration_error,
             "full_graph_shd": graph_shd,
             "skeleton_precision": sk_prec,
@@ -206,6 +328,11 @@ def run_one(
             "accepted_rate": counts["n_accepted"] / total_claims,
             "rejected_rate": counts["n_rejected"] / total_claims,
             "unresolved_rate": counts["n_unresolved"] / total_claims,
+            "knowledge_regime": config.knowledge_regime,
+            "knowledge_mode": config.knowledge_mode,
+            "lambda_penalty": config.lambda_penalty,
+            **baseline_cols,
+            **decision_cols,
         })
 
         claims = claims.copy()
@@ -278,24 +405,51 @@ def run_synthetic(
             rng,
         )
 
-        data = simulate_linear_sem(
+        data, W_full = simulate_linear_sem(
             B,
             n=config.n,
             noise=config.noise,
             rng=rng,
+            return_weights=True,
         )
         data, B_obs = hide_latents(data, B, config.latent_fraction, rng)
 
+        # sem_weights are only passed in the fully observed setting; when
+        # latents are hidden the W indexing no longer matches the observed
+        # variable order so we pass None to disable the decision task.
+        sem_weights_for_task = W_full if config.latent_fraction == 0.0 else None
+
         var_names = list(data.columns)
         true_graph = numpy_to_adj(B_obs, var_names)
-        # No hard ordering constraint: the true causal order is a random
-        # permutation, not the variable-index order.
-        knowledge = make_domain_knowledge(var_names)
+
+        # Build regime knowledge.
+        empty_knowledge = make_domain_knowledge(var_names)
+        if config.knowledge_regime == "none":
+            regime_knowledge = empty_knowledge
+        elif config.knowledge_regime == "correct":
+            regime_knowledge = knowledge_from_true_graph(
+                true_graph, config.knowledge_frac, rng
+            )
+        else:  # noisy
+            correct_knowledge = knowledge_from_true_graph(
+                true_graph, config.knowledge_frac, rng
+            )
+            regime_knowledge = corrupt_knowledge(
+                correct_knowledge, config.knowledge_noise, rng
+            )
+
+        # Dispatch per knowledge_mode.
+        if config.knowledge_mode == "hard":
+            task_knowledge = regime_knowledge
+            task_soft_knowledge = None
+        else:  # soft
+            task_knowledge = empty_knowledge
+            task_soft_knowledge = regime_knowledge
 
         for method in methods:
             tasks.append({
                 "data": data,
-                "knowledge": knowledge,
+                "knowledge": task_knowledge,
                 "config": config,
                 "method": method,
                 "dataset": "synthetic",
@@ -303,6 +457,8 @@ def run_synthetic(
                 "true_graph": true_graph,
                 "distance_mode": distance_mode,
                 "rng_seed": config.random_seed + repeat * 1000 + _stable_method_offset(method),
+                "soft_knowledge": task_soft_knowledge,
+                "sem_weights": sem_weights_for_task,
             })
 
     for summary, claims, scores in _execute_tasks(tasks, n_workers):

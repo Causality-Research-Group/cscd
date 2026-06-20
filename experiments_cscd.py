@@ -34,6 +34,7 @@ def main() -> None:
         n_subsets=args.n_subsets,
         subset_frac=args.subset_frac,
         n_calibration_resamples=args.n_calibration_resamples,
+        n_test_chunks=args.n_test_chunks,
         n_candidate_graphs=args.n_candidate_graphs,
         pc_alpha=args.pc_alpha,
         fci_alpha=args.fci_alpha,
@@ -41,7 +42,18 @@ def main() -> None:
         ges_score=args.ges_score,
         accepted_threshold=args.accepted_threshold,
         rejected_threshold=args.rejected_threshold,
+        stability_n_bootstraps=args.stability_n_bootstraps,
+        stability_threshold=args.stability_threshold,
         random_seed=args.random_seed,
+        knowledge_regime=args.knowledge_regime,
+        knowledge_mode=args.knowledge_mode,
+        knowledge_frac=args.knowledge_frac,
+        knowledge_noise=args.knowledge_noise,
+        lambda_penalty=args.lambda_penalty,
+        decision_n_pairs=args.decision_n_pairs,
+        equal_chunks=args.equal_chunks,
+        train_size=args.train_size,
+        cal_chunk_size=args.cal_chunk_size,
     )
 
     methods = [m.lower() for m in args.methods]
