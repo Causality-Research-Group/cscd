@@ -47,34 +47,47 @@ def restrict_knowledge(
     )
 
 
+def forbids_edge(knowledge: "DomainKnowledge", parent: str, child: str) -> bool:
+    """True if the knowledge rules out parent -> child."""
+    violates_order = (
+        parent in knowledge.order
+        and child in knowledge.order
+        and knowledge.order[parent] >= knowledge.order[child]
+    )
+    return violates_order or (parent, child) in knowledge.forbidden_edges
+
+
 def apply_hard_domain_constraints(
-    A: pd.DataFrame,
+    marks: pd.DataFrame,
     knowledge: "DomainKnowledge",
 ) -> pd.DataFrame:
-    A = A.copy()
-    vars_ = list(A.index)
+    """Enforce hard knowledge on an endpoint-mark graph.
 
-    for parent in vars_:
-        for child in vars_:
-            if parent == child:
-                A.loc[parent, child] = 0
+    For a forbidden a -> b:
+      * a definite a -> b edge is removed;
+      * an edge that could still be a -> b (no arrowhead at a) gets an
+        arrowhead at a, so a -- b becomes a <- b and a o-> b becomes a <-> b.
+    A required a -> b is written as a definite a -> b edge.
+    """
+    from .mixed_graph import ARROW, TAIL, has_edge, is_directed, remove_edge, set_edge
+
+    marks = marks.copy()
+    vars_ = list(marks.index)
+
+    for a in vars_:
+        for b in vars_:
+            if a == b or not has_edge(marks, a, b) or not forbids_edge(knowledge, a, b):
                 continue
+            if is_directed(marks, a, b):
+                remove_edge(marks, a, b)
+            elif marks.loc[b, a] != ARROW:
+                marks.loc[b, a] = ARROW
 
-            violates_order = (
-                parent in knowledge.order
-                and child in knowledge.order
-                and knowledge.order[parent] >= knowledge.order[child]
-            )
-            forbidden = (parent, child) in knowledge.forbidden_edges
+    for a, b in knowledge.required_edges:
+        if a in marks.index and b in marks.index:
+            set_edge(marks, a, b, TAIL, ARROW)
 
-            if violates_order or forbidden:
-                A.loc[parent, child] = 0
-
-    for parent, child in knowledge.required_edges:
-        if parent in A.index and child in A.columns:
-            A.loc[parent, child] = 1
-
-    return A
+    return marks
 
 
 def knowledge_from_true_graph(

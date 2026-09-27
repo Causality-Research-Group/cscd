@@ -1,9 +1,18 @@
-from typing import List
+"""Wrappers around the causal-learn discovery algorithms.
+
+Every algorithm returns an endpoint-mark graph (see ``mixed_graph``):
+PC and GES return CPDAGs, FCI returns a PAG, and DirectLiNGAM returns a DAG.
+"""
+
+import contextlib
+import io
+from typing import Optional
 
 import numpy as np
 import pandas as pd
 
-from .utils import apply_hard_domain_constraints, empty_adj
+from .mixed_graph import from_causallearn, from_dag_adjacency, to_adjacency
+from .utils import apply_hard_domain_constraints
 
 try:
     from causallearn.search.ConstraintBased.PC import pc
@@ -21,68 +30,105 @@ except Exception:
     ges = None
 
 try:
-    from causallearn.graph.Endpoint import Endpoint
+    from causallearn.search.FCMBased.lingam import DirectLiNGAM
 except Exception:
-    Endpoint = None
+    DirectLiNGAM = None
+
+SUPPORTED_METHODS = ("pc", "ges", "fci", "lingam")
 
 
-def causallearn_graph_to_directed_adjacency(
-    graph_obj,
-    var_names: List[str],
-    keep_undirected_as_bidirected: bool = True,
+def _run_pc(X: np.ndarray, var_names, config, alpha: float) -> pd.DataFrame:
+    if pc is None:
+        raise ImportError("Could not import causal-learn PC. Install causal-learn.")
+    cg = pc(
+        X,
+        alpha=alpha,
+        indep_test=config.independence_test,
+        stable=True,
+        node_names=var_names,
+        verbose=False,
+        show_progress=False,
+    )
+    return from_causallearn(cg.G, var_names)
+
+
+def _run_fci(X: np.ndarray, var_names, config, alpha: float) -> pd.DataFrame:
+    if fci is None:
+        raise ImportError("Could not import causal-learn FCI. Install causal-learn.")
+    # causal-learn's FCI prints every orientation step even with verbose=False.
+    with contextlib.redirect_stdout(io.StringIO()):
+        g, _ = fci(
+            X,
+            independence_test_method=config.independence_test,
+            alpha=alpha,
+            verbose=False,
+            node_names=var_names,
+            show_progress=False,
+        )
+    return from_causallearn(g, var_names)
+
+
+def _run_ges(X: np.ndarray, var_names, config, max_parents: Optional[float]) -> pd.DataFrame:
+    # causal-learn 0.1.3.x hard-codes the BIC penalty, so the tunable GES
+    # hyperparameter is the maximum number of parents (None = p / 2).
+    if ges is None:
+        raise ImportError("Could not import causal-learn GES. Install causal-learn.")
+    record = ges(X, score_func=config.ges_score, maxP=max_parents)
+    return from_causallearn(record["G"], var_names)
+
+
+def _run_lingam(X: np.ndarray, var_names, random_state: int) -> pd.DataFrame:
+    if DirectLiNGAM is None:
+        raise ImportError("Could not import causal-learn DirectLiNGAM. Install causal-learn.")
+    model = DirectLiNGAM(random_state=random_state)
+    model.fit(X)
+    # adjacency_matrix_[i, j] is the coefficient of j in the equation of i.
+    B = (np.abs(model.adjacency_matrix_) > 0).astype(int).T
+    adj = pd.DataFrame(B, index=var_names, columns=var_names)
+    return from_dag_adjacency(adj)
+
+
+def default_hyperparameter(method: str, config) -> Optional[float]:
+    """Significance level for PC/FCI, maximum parents for GES (None = p/2)."""
+    method = method.lower()
+    if method == "pc":
+        return config.pc_alpha
+    if method == "fci":
+        return config.fci_alpha
+    return None
+
+
+def discover_marks(
+    data: pd.DataFrame,
+    method: str,
+    knowledge,
+    config,
+    random_state: int = 0,
+    hyperparameter: Optional[float] = None,
 ) -> pd.DataFrame:
-    A = empty_adj(var_names)
+    """Run a base discovery algorithm and apply hard domain knowledge.
 
-    try:
-        nodes = graph_obj.get_nodes()
-        node_to_idx = {node: i for i, node in enumerate(nodes)}
-        edges = graph_obj.get_graph_edges()
-    except Exception:
-        if hasattr(graph_obj, "graph"):
-            mat = np.asarray(graph_obj.graph)
-            p = len(var_names)
-            for i in range(p):
-                for j in range(p):
-                    if i != j and mat[i, j] != 0:
-                        A.iloc[i, j] = 1
-            return A
-        raise RuntimeError("Could not parse causal-learn graph object.")
+    ``hyperparameter`` overrides the configured significance level (PC, FCI)
+    or the maximum number of parents (GES).  It is used to build the candidate family.
+    """
+    method = method.lower()
+    X = data.values
+    var_names = list(data.columns)
+    if hyperparameter is None:
+        hyperparameter = default_hyperparameter(method, config)
 
-    for e in edges:
-        try:
-            n1 = e.get_node1()
-            n2 = e.get_node2()
-            ep1 = e.get_endpoint1()
-            ep2 = e.get_endpoint2()
-        except Exception:
-            continue
+    if method == "pc":
+        marks = _run_pc(X, var_names, config, alpha=hyperparameter)
+    elif method == "fci":
+        marks = _run_fci(X, var_names, config, alpha=hyperparameter)
+    elif method == "ges":
+        marks = _run_ges(X, var_names, config, max_parents=hyperparameter)
+    elif method == "lingam":
+        marks = _run_lingam(X, var_names, random_state)
+    else:
+        raise ValueError(f"Unknown method {method!r}; expected one of {SUPPORTED_METHODS}.")
 
-        i = node_to_idx.get(n1)
-        j = node_to_idx.get(n2)
-        if i is None or j is None:
-            continue
-        if i >= len(var_names) or j >= len(var_names):
-            continue
-
-        v1 = var_names[i]
-        v2 = var_names[j]
-
-        if Endpoint is not None and ep1 == Endpoint.TAIL and ep2 == Endpoint.ARROW:
-            A.loc[v1, v2] = 1
-        elif Endpoint is not None and ep1 == Endpoint.ARROW and ep2 == Endpoint.TAIL:
-            A.loc[v2, v1] = 1
-        else:
-            if keep_undirected_as_bidirected:
-                A.loc[v1, v2] = 1
-                A.loc[v2, v1] = 1
-
-    return A
-
-
-def ges_record_to_adjacency(record, var_names: List[str]) -> pd.DataFrame:
-    if isinstance(record, dict) and "G" in record:
-        return causallearn_graph_to_directed_adjacency(record["G"], var_names)
-    return causallearn_graph_to_directed_adjacency(record, var_names)
+    return apply_hard_domain_constraints(marks, knowledge)
 
 
 def discover_graph(
@@ -92,71 +138,10 @@ def discover_graph(
     config,
     random_state: int = 0,
 ) -> pd.DataFrame:
-    method = method.lower()
-    data = data.copy()
-    X = data.values
-    var_names = list(data.columns)
+    """Run discovery and flatten the result to a 0/1 adjacency matrix.
 
-    if method == "pc":
-        if pc is None:
-            raise ImportError("Could not import causal-learn PC. Install causal-learn.")
-        try:
-            cg = pc(
-                X,
-                alpha=config.pc_alpha,
-                indep_test=config.independence_test,
-                stable=True,
-                node_names=var_names,
-                verbose=False,
-                show_progress=False,
-            )
-        except TypeError:
-            cg = pc(
-                X,
-                alpha=config.pc_alpha,
-                indep_test=config.independence_test,
-                stable=True,
-                verbose=False,
-            )
-        A = causallearn_graph_to_directed_adjacency(cg.G, var_names)
-
-    elif method == "fci":
-        if fci is None:
-            raise ImportError("Could not import causal-learn FCI. Install causal-learn.")
-        try:
-            g, _ = fci(
-                X,
-                independence_test_method=config.independence_test,
-                alpha=config.fci_alpha,
-                verbose=False,
-                node_names=var_names,
-                show_progress=False,
-            )
-        except TypeError:
-            g, _ = fci(
-                X,
-                independence_test_method=config.independence_test,
-                alpha=config.fci_alpha,
-                verbose=False,
-            )
-        A = causallearn_graph_to_directed_adjacency(g, var_names)
-
-    elif method == "ges":
-        if ges is None:
-            raise ImportError("Could not import causal-learn GES. Install causal-learn.")
-        record = ges(
-            X,
-            score_func=config.ges_score,
-        )
-        A = ges_record_to_adjacency(record, var_names)
-
-    elif method == "rcd":
-        raise NotImplementedError(
-            "The RCD (i.e., LinGAM) causal algorithm is not yet implemented. "
-        )
-
-    else:
-        raise ValueError(f"Unknown method: {method}")
-
-    A = apply_hard_domain_constraints(A, knowledge)
-    return A
+    Used by code that reasons about parent claims (claims, baselines, decision
+    task).  Self-compatibility scoring uses ``discover_marks`` instead, because
+    marginalization needs the endpoint marks.
+    """
+    return to_adjacency(discover_marks(data, method, knowledge, config, random_state))

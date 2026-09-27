@@ -13,6 +13,7 @@ from .config import ExperimentConfig, DomainKnowledge
 from .data import (
     generate_random_dag,
     hide_latents,
+    true_observed_graph,
     load_bnlearn_pgmpy_dataset,
     load_causallearn_sachs,
     load_real_csv,
@@ -23,8 +24,8 @@ from .utils import (
     corrupt_knowledge,
     knowledge_from_true_graph,
     make_domain_knowledge,
-    numpy_to_adj,
 )
+from .mixed_graph import from_dag_adjacency, to_adjacency
 from .metrics import accepted_precision_recall, shd, skeleton_f1, status_counts, summarize_claims
 from .decision import decision_task_summary
 from .plotting import make_summary_table, plot_calibration, plot_claim_rates, plot_precision_recall, plot_raw_self_compatibility, plot_score_distributions, plot_top_claims, save_and_plot
@@ -34,12 +35,19 @@ from .selfcompat import (
     conformal_graph_set,
     conformal_threshold,
     generate_candidate_graphs,
+    project_local_graphs,
     sample_variable_subsets,
     self_compatibility_score_among_local_graphs,
     train_local_graphs,
 )
-from .graph import discover_graph
-from .baselines import baseline_summary
+from .baselines import (
+    ablation_columns,
+    baseline_summary,
+    bootstrap_compatibility,
+    bootstrap_marks,
+    bootstrap_threshold,
+    conformal_without_subsets,
+)
 
 
 def _stable_method_offset(method: str) -> int:
@@ -62,11 +70,19 @@ def run_one(
     dataset: str,
     repeat: int,
     true_graph: Optional[pd.DataFrame] = None,
-    distance_mode: str = "directed",
+    distance_mode: str = "skeleton",
     rng_seed: Optional[int] = None,
     soft_knowledge: Optional[DomainKnowledge] = None,
     sem_weights: Optional[np.ndarray] = None,
+    true_full_dag: Optional[pd.DataFrame] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """One repeat of CSCD for one base method.
+
+    ``true_graph`` holds the true parent claims among the observed variables
+    and is used for claim-level metrics.  ``true_full_dag`` is the full
+    data-generating DAG, possibly with hidden variables; when given, its
+    score A(G*) is computed to check whether the truth passes the threshold.
+    """
     if rng_seed is None:
         rng_seed = config.random_seed + repeat * 1000 + _stable_method_offset(method)
     rng = _make_rng(rng_seed)
@@ -97,6 +113,7 @@ def run_one(
         m=config.n_subsets,
         subset_frac=config.subset_frac,
         rng=rng,
+        require_pair_coverage=config.require_pair_coverage,
     )
 
     local_graphs = train_local_graphs(
@@ -107,6 +124,8 @@ def run_one(
         config,
         rng,
     )
+
+    local_projections = project_local_graphs(local_graphs, subsets, distance_mode)
 
     raw_self_compat = self_compatibility_score_among_local_graphs(
         local_graphs,
@@ -133,7 +152,7 @@ def run_one(
     all_chunk_scores = calibration_scores(
         D_cal,
         subsets,
-        local_graphs,
+        local_projections,
         knowledge,
         method,
         config,
@@ -173,33 +192,50 @@ def run_one(
 
     candidate_base_scores = [
         candidate_graph_score(
-            G, local_graphs, subsets, distance_mode,
+            G, local_projections, subsets, distance_mode,
             knowledge=soft_knowledge, lambda_penalty=lam,
         )
         for G in candidates
     ]
+    # Claims, baselines, and the decision task work on 0/1 adjacency.
+    candidate_adjs = [to_adjacency(G) for G in candidates]
+    # The first candidate is the base algorithm on the full D_train.
+    full_graph = candidate_adjs[0]
 
-    full_graph = discover_graph(
-        D_tr,
-        method=method,
-        knowledge=knowledge,
-        config=config,
-        random_state=int(rng.integers(1_000_000)),
-    )
+    # Score of the data-generating graph.  It is marginalized onto each subset
+    # like any candidate, so hidden variables are handled correctly.
+    true_marks = from_dag_adjacency(true_full_dag) if true_full_dag is not None else None
+    if true_marks is not None:
+        true_graph_score = candidate_graph_score(
+            true_marks, local_projections, subsets, distance_mode,
+            knowledge=soft_knowledge, lambda_penalty=lam,
+        )
+    else:
+        true_graph_score = float("nan")
 
+    bootstrap = bootstrap_marks(D_tr, knowledge, method, config, rng, config.stability_n_bootstraps)
     baseline_cols = baseline_summary(
         full_graph=full_graph,
         data_train=D_tr,
-        knowledge=knowledge,
-        method=method,
         config=config,
         rng=rng,
-        candidates=candidates,
+        candidates=candidate_adjs,
         candidate_scores=candidate_base_scores,
         raw_self_compat=raw_self_compat,
         var_names=var_names,
         true_graph=true_graph,
+        bootstrap_adjs=[to_adjacency(G) for G in bootstrap],
     )
+
+    # Localization ablations: same candidate pool, no variable subsets.
+    if config.run_ablations:
+        boot_compat = bootstrap_compatibility(
+            bootstrap, candidates, var_names, distance_mode, true_marks
+        )
+        no_subsets = conformal_without_subsets(
+            D_cal, candidates[0], candidates, knowledge, method, config, rng,
+            distance_mode, n_chunks=N_cal, chunk_size=cal_chunk_size, true_full_dag_marks=true_marks,
+        )
 
     summary_rows = []
     claim_rows = []
@@ -234,15 +270,25 @@ def run_one(
 
     for alpha in config.alpha_values:
         tau = conformal_threshold(cal_scores, alpha)
-        selected, candidate_scores = conformal_graph_set(
-            candidates,
-            local_graphs,
-            subsets,
-            tau,
-            distance_mode=distance_mode,
-            knowledge=soft_knowledge,
-            lambda_penalty=lam,
-        )
+        selected = conformal_graph_set(candidate_adjs, candidate_base_scores, tau)
+        candidate_scores = candidate_base_scores
+
+        ablation_cols: Dict[str, float] = {}
+        if config.run_ablations:
+            tau_boot = bootstrap_threshold(boot_compat["reference"], alpha)
+            ablation_cols.update(ablation_columns(
+                "bootcompat",
+                conformal_graph_set(candidate_adjs, boot_compat["candidate"], tau_boot),
+                float(boot_compat["truth"] <= tau_boot) if true_marks is not None else float("nan"),
+                var_names, true_graph, config,
+            ))
+            tau_v = conformal_threshold(no_subsets["calibration"], alpha)
+            ablation_cols.update(ablation_columns(
+                "nosubsets",
+                conformal_graph_set(candidate_adjs, no_subsets["candidate"], tau_v),
+                float(no_subsets["truth"] <= tau_v) if true_marks is not None else float("nan"),
+                var_names, true_graph, config,
+            ))
 
         claims = summarize_claims(
             selected,
@@ -315,6 +361,13 @@ def run_one(
             "tau": tau if finite_tau else float("nan"),
             "raw_self_compatibility": raw_self_compat,
             "n_selected_graphs": len(selected),
+            "n_candidates": len(candidates),
+            "n_subsets_used": len(subsets),
+            "true_graph_score": true_graph_score,
+            "true_graph_included": (
+                float(true_graph_score <= tau) if np.isfinite(true_graph_score) else float("nan")
+            ),
+            "full_graph_score": candidate_base_scores[0],
             "candidate_accept_rate": float(np.mean(np.array(candidate_scores) <= tau)),
             "cal_exceed_rate": cal_exceed_rate,
             "insample_exceed_rate": insample_exceed_rate,
@@ -332,6 +385,7 @@ def run_one(
             "knowledge_mode": config.knowledge_mode,
             "lambda_penalty": config.lambda_penalty,
             **baseline_cols,
+            **ablation_cols,
             **decision_cols,
         })
 
@@ -412,7 +466,7 @@ def run_synthetic(
             rng=rng,
             return_weights=True,
         )
-        data, B_obs = hide_latents(data, B, config.latent_fraction, rng)
+        data, full_dag = hide_latents(data, B, config.latent_fraction, rng)
 
         # sem_weights are only passed in the fully observed setting; when
         # latents are hidden the W indexing no longer matches the observed
@@ -420,7 +474,7 @@ def run_synthetic(
         sem_weights_for_task = W_full if config.latent_fraction == 0.0 else None
 
         var_names = list(data.columns)
-        true_graph = numpy_to_adj(B_obs, var_names)
+        true_graph = true_observed_graph(full_dag, var_names)
 
         # Build regime knowledge.
         empty_knowledge = make_domain_knowledge(var_names)
@@ -459,6 +513,7 @@ def run_synthetic(
                 "rng_seed": config.random_seed + repeat * 1000 + _stable_method_offset(method),
                 "soft_knowledge": task_soft_knowledge,
                 "sem_weights": sem_weights_for_task,
+                "true_full_dag": full_dag,
             })
 
     for summary, claims, scores in _execute_tasks(tasks, n_workers):
@@ -478,60 +533,46 @@ def run_named_dataset(
     n_workers: Optional[int] = None,
     real_csv: Optional[str] = None,
 ) -> None:
+    """Run CSCD on the Sachs data, a bnlearn network, or a CSV file.
+
+    bnlearn networks (asia, sachs_bn, child, insurance, alarm) are resampled
+    for every repeat.  The Sachs data and CSV files are fixed, so repeats only
+    change the train/calibration split, subsets, and candidates.
+    """
     dataset = dataset.lower()
+    bnlearn_names = {"asia": "asia", "sachs_bn": "sachs", "child": "child",
+                     "insurance": "insurance", "alarm": "alarm"}
 
-    if dataset == "sachs_real":
-        data, ref_graph = load_causallearn_sachs()
-        dataset_label = "sachs_real"
-    elif dataset == "asia":
-        data, ref_graph = load_bnlearn_pgmpy_dataset(
-            "asia",
-            n_samples=config.n,
-            random_seed=config.random_seed,
-        )
-        dataset_label = "asia"
-    elif dataset == "sachs_bn":
-        data, ref_graph = load_bnlearn_pgmpy_dataset(
-            "sachs",
-            n_samples=config.n,
-            random_seed=config.random_seed,
-        )
-        dataset_label = "sachs_bn"
-    elif dataset == "child":
-        data, ref_graph = load_bnlearn_pgmpy_dataset(
-            "child",
-            n_samples=config.n,
-            random_seed=config.random_seed,
-        )
-        dataset_label = "child"
-    elif dataset == "csv":
-        if real_csv is None:
-            raise ValueError("--real_csv is required when --dataset csv.")
-        data = load_real_csv(real_csv)
-        ref_graph = sachs_reference_graph(list(data.columns))
-        dataset_label = "csv"
-    else:
-        raise ValueError(
-            "Unknown dataset. Use one of: synthetic, sachs_real, asia, "
-            "sachs_bn, child, csv."
-        )
-
-    var_names = list(data.columns)
-    knowledge = make_domain_knowledge(var_names)
+    def load(repeat: int):
+        if dataset == "sachs_real":
+            return load_causallearn_sachs()
+        if dataset in bnlearn_names:
+            return load_bnlearn_pgmpy_dataset(
+                bnlearn_names[dataset], n_samples=config.n, random_seed=config.random_seed + repeat
+            )
+        if dataset == "csv":
+            if real_csv is None:
+                raise ValueError("--real_csv is required when --dataset csv.")
+            data = load_real_csv(real_csv)
+            return data, sachs_reference_graph(list(data.columns))
+        raise ValueError(f"Unknown dataset {dataset!r}.")
 
     tasks = []
     for repeat in range(config.n_repeats):
+        data, ref_graph = load(repeat)
+        knowledge = make_domain_knowledge(list(data.columns))
         for method in methods:
             tasks.append({
                 "data": data,
                 "knowledge": knowledge,
                 "config": config,
                 "method": method,
-                "dataset": dataset_label,
+                "dataset": dataset,
                 "repeat": repeat,
                 "true_graph": ref_graph,
                 "distance_mode": distance_mode,
                 "rng_seed": config.random_seed + repeat * 1000 + _stable_method_offset(method),
+                "true_full_dag": ref_graph,
             })
 
     all_summary = []

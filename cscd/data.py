@@ -118,21 +118,43 @@ def hide_latents(
     B: np.ndarray,
     latent_fraction: float,
     rng: np.random.Generator,
-) -> Tuple[pd.DataFrame, np.ndarray]:
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Hide a random fraction of the variables.
+
+    Returns the observed data, with columns renamed X0, X1, ..., and the full
+    data-generating DAG as a labelled adjacency matrix.  In that matrix the
+    observed variables carry their new names and hidden variables are named
+    L0, L1, ....  The truth over the observed variables is the *marginal* of
+    this DAG, not its induced subgraph (see ``true_observed_graph``).
+    """
     p = B.shape[0]
     n_latent = int(np.floor(latent_fraction * p))
-
-    if n_latent <= 0:
-        return data, B
-
-    latent = set(rng.choice(np.arange(p), size=n_latent, replace=False))
+    latent = set(rng.choice(np.arange(p), size=n_latent, replace=False)) if n_latent > 0 else set()
     observed = [j for j in range(p) if j not in latent]
 
-    data_obs = data.iloc[:, observed].copy()
-    B_obs = B[np.ix_(observed, observed)]
+    names = [""] * p
+    for k, j in enumerate(observed):
+        names[j] = f"X{k}"
+    for k, j in enumerate(sorted(latent)):
+        names[j] = f"L{k}"
 
-    data_obs.columns = [f"X{k}" for k in range(len(observed))]
-    return data_obs, B_obs
+    data_obs = data.iloc[:, observed].copy()
+    data_obs.columns = [names[j] for j in observed]
+    full_dag = pd.DataFrame(B.astype(int), index=names, columns=names)
+    return data_obs, full_dag
+
+
+def true_observed_graph(full_dag: pd.DataFrame, observed: List[str]) -> pd.DataFrame:
+    """True parent claims among the observed variables.
+
+    Entry [a, b] is 1 iff a -> b in the MAG obtained by marginalizing out the
+    hidden variables: a and b cannot be separated by observed variables, and
+    a is an ancestor of b.  With no hidden variables this is the DAG itself.
+    """
+    from .mixed_graph import dag_from_adjacency, dag_marginal_mag, directed_adjacency
+
+    mag = dag_marginal_mag(dag_from_adjacency(full_dag), observed)
+    return directed_adjacency(mag)
 
 
 def load_causallearn_sachs() -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
@@ -169,6 +191,9 @@ def encode_discrete_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return out.astype(float)
 
 
+BNLEARN_NETWORKS = ("asia", "sachs", "child", "insurance", "alarm")
+
+
 def load_bnlearn_pgmpy_dataset(
     name: str,
     n_samples: int,
@@ -180,8 +205,8 @@ def load_bnlearn_pgmpy_dataset(
         )
 
     name = name.lower()
-    if name not in {"asia", "sachs", "child"}:
-        raise ValueError("Expected one of: asia, sachs, child.")
+    if name not in BNLEARN_NETWORKS:
+        raise ValueError(f"Expected one of: {', '.join(BNLEARN_NETWORKS)}.")
 
     model = pgmpy_load_model(f"bnlearn/{name}")
     var_names = list(model.nodes())
@@ -211,30 +236,26 @@ def load_real_csv(path: str) -> pd.DataFrame:
     return df
 
 
+# Consensus network of Sachs et al. (2005), as distributed with bnlearn (17 arcs).
+SACHS_CONSENSUS_EDGES = [
+    ("Erk", "Akt"), ("Mek", "Erk"), ("PIP3", "PIP2"), ("PKA", "Akt"), ("PKA", "Erk"),
+    ("PKA", "Jnk"), ("PKA", "Mek"), ("PKA", "P38"), ("PKA", "Raf"), ("PKC", "Jnk"),
+    ("PKC", "Mek"), ("PKC", "P38"), ("PKC", "PKA"), ("PKC", "Raf"), ("Plcg", "PIP2"),
+    ("Plcg", "PIP3"), ("Raf", "Mek"),
+]
+
+# causal-learn names the variables in lower case and calls Plcg "plc".
+_SACHS_ALIASES = {"plc": "plcg"}
+
+
 def sachs_reference_graph(var_names: List[str]) -> Optional[pd.DataFrame]:
-    edges = [
-        ("Raf", "Mek"),
-        ("Mek", "Erk"),
-        ("Plcg", "PIP2"),
-        ("Plcg", "PIP3"),
-        ("PIP3", "Akt"),
-        ("PIP3", "PIP2"),
-        ("PKA", "Raf"),
-        ("PKA", "Mek"),
-        ("PKA", "Erk"),
-        ("PKC", "Raf"),
-        ("PKC", "Mek"),
-        ("PKC", "Jnk"),
-        ("PKC", "P38"),
-    ]
-
-    var_set = set(var_names)
-    usable = [(a, b) for a, b in edges if a in var_set and b in var_set]
-
-    if not usable:
-        return None
-
+    """Consensus Sachs network over ``var_names``, matching names case-insensitively."""
+    canonical = {_SACHS_ALIASES.get(v.lower(), v.lower()): v for v in var_names}
     A = pd.DataFrame(0, index=var_names, columns=var_names, dtype=int)
-    for a, b in usable:
-        A.loc[a, b] = 1
-    return A
+    n_found = 0
+    for a, b in SACHS_CONSENSUS_EDGES:
+        a_name, b_name = canonical.get(a.lower()), canonical.get(b.lower())
+        if a_name is not None and b_name is not None:
+            A.loc[a_name, b_name] = 1
+            n_found += 1
+    return A if n_found else None

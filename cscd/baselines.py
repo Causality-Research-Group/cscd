@@ -1,11 +1,31 @@
+"""Baselines compared with conformal self-compatibility (CSCD).
+
+Claim-level baselines (independent of alpha):
+  * single run of the base algorithm on D_train;
+  * stability selection over bootstrap runs (Meinshausen and Buehlmann, 2010);
+  * uncalibrated self-compatibility (Faller et al., 2024): the candidate set is
+    thresholded at the raw self-compatibility score instead of tau_alpha;
+  * Bayesian order MCMC edge posteriors (Friedman and Koller, 2003).
+
+Localization ablations (one result per alpha).  Both score the *same*
+candidate pool as CSCD, so they differ from it only in how the reference and
+the threshold are built:
+  * bootstrap compatibility: candidates are compared with full-variable
+    bootstrap graphs, and admitted if their mean distance is at most the
+    (1 - alpha) quantile of the bootstrap graphs' own mean distances;
+  * conformal without subsets: CSCD with a single subset equal to V.
+"""
+
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
-from .graph import discover_graph
+from .bayes import bayesian_edge_posterior
+from .graph import discover_marks
 from .metrics import accepted_precision_recall, shd, skeleton_f1, status_counts, summarize_claims
+from .selfcompat import calibration_scores, conformal_threshold, graph_distance, project
 
 logger = logging.getLogger(__name__)
 
@@ -18,86 +38,76 @@ def directed_edge_precision_recall(
     true_graph = true_graph.loc[vars_, vars_]
     mask = ~np.eye(len(vars_), dtype=bool)
 
-    pred_vals = pred_graph.values[mask]
-    true_vals = true_graph.values[mask]
-
-    pred_edges = pred_vals == 1
-    true_edges = true_vals == 1
+    pred_edges = pred_graph.values[mask] == 1
+    true_edges = true_graph.values[mask] == 1
 
     tp = int(np.sum(pred_edges & true_edges))
     fp = int(np.sum(pred_edges & ~true_edges))
     fn = int(np.sum(~pred_edges & true_edges))
-
-    precision = tp / max(tp + fp, 1)
-    recall = tp / max(tp + fn, 1)
-    return {"precision": float(precision), "recall": float(recall)}
+    return {"precision": tp / max(tp + fp, 1), "recall": tp / max(tp + fn, 1)}
 
 
-def stability_selection_graph(
+def bootstrap_marks(
     data_train: pd.DataFrame,
     knowledge,
     method: str,
     config,
     rng: np.random.Generator,
-    B: Optional[int] = None,
-    threshold: Optional[float] = None,
-) -> pd.DataFrame:
-    if B is None:
-        B = config.stability_n_bootstraps
-    if threshold is None:
-        threshold = config.stability_threshold
-
-    var_names = list(data_train.columns)
+    B: int,
+) -> List[pd.DataFrame]:
+    """Base algorithm on B bootstrap resamples of D_train (all variables)."""
     n = len(data_train)
-
-    # skeleton_counts[i, j] counts bootstraps where the unordered pair (i,j) was present
-    p = len(var_names)
-    skeleton_counts = np.zeros((p, p), dtype=int)
-    # directed_counts[i, j] counts bootstraps where directed edge i->j was present
-    directed_counts = np.zeros((p, p), dtype=int)
-
-    n_success = 0
+    graphs = []
     for b in range(B):
+        idx = rng.choice(n, size=n, replace=True)
         try:
-            idx = rng.choice(np.arange(n), size=n, replace=True)
-            data_b = data_train.iloc[idx].reset_index(drop=True)
-            G_b = discover_graph(
-                data_b,
-                method=method,
-                knowledge=knowledge,
-                config=config,
-                random_state=int(rng.integers(1_000_000)),
+            graphs.append(
+                discover_marks(
+                    data_train.iloc[idx].reset_index(drop=True),
+                    method=method,
+                    knowledge=knowledge,
+                    config=config,
+                    random_state=int(rng.integers(1_000_000)),
+                )
             )
-            G_vals = G_b.loc[var_names, var_names].values
-            for i in range(p):
-                for j in range(i + 1, p):
-                    if G_vals[i, j] == 1 or G_vals[j, i] == 1:
-                        skeleton_counts[i, j] += 1
-                        skeleton_counts[j, i] += 1
-            directed_counts += (G_vals == 1).astype(int)
-            n_success += 1
         except Exception as exc:
-            logger.debug("stability bootstrap %d discovery failed (%s); skipping.", b, exc)
+            logger.debug("Bootstrap %d failed (%s); skipping.", b, exc)
+    return graphs
 
-    denom = max(n_success, 1)
-    skeleton_freq = skeleton_counts / denom
+
+def stability_selection_graph(
+    bootstrap_adjs: List[pd.DataFrame],
+    var_names: List[str],
+    threshold: float,
+) -> pd.DataFrame:
+    """Keep pairs adjacent in at least ``threshold`` of the bootstrap graphs.
+
+    Each kept pair is oriented in its more frequent direction; ties are kept
+    in both directions (the undirected/bidirected convention).
+    """
+    p = len(var_names)
+    skeleton_freq = np.zeros((p, p))
+    directed_freq = np.zeros((p, p))
+    for G in bootstrap_adjs:
+        values = G.loc[var_names, var_names].values
+        skeleton_freq += ((values + values.T) > 0)
+        directed_freq += (values == 1)
+    denom = max(len(bootstrap_adjs), 1)
+    skeleton_freq /= denom
 
     A = pd.DataFrame(0, index=var_names, columns=var_names, dtype=int)
     for i in range(p):
         for j in range(i + 1, p):
-            if skeleton_freq[i, j] >= threshold:
-                vi, vj = var_names[i], var_names[j]
-                fwd = directed_counts[i, j]
-                bwd = directed_counts[j, i]
-                if fwd > bwd:
-                    A.loc[vi, vj] = 1
-                elif bwd > fwd:
-                    A.loc[vj, vi] = 1
-                else:
-                    # equal counts or both zero — undirected/bidirected convention
-                    A.loc[vi, vj] = 1
-                    A.loc[vj, vi] = 1
-
+            if skeleton_freq[i, j] < threshold:
+                continue
+            vi, vj = var_names[i], var_names[j]
+            if directed_freq[i, j] > directed_freq[j, i]:
+                A.loc[vi, vj] = 1
+            elif directed_freq[j, i] > directed_freq[i, j]:
+                A.loc[vj, vi] = 1
+            else:
+                A.loc[vi, vj] = 1
+                A.loc[vj, vi] = 1
     return A
 
 
@@ -107,7 +117,7 @@ def uncalibrated_selfcompat_claims(
     raw_self_compat: float,
     var_names: List[str],
     config,
-) -> Tuple[pd.DataFrame, int]:
+):
     admitted = [G for G, s in zip(candidates, candidate_scores) if s <= raw_self_compat]
     claims = summarize_claims(
         admitted,
@@ -118,11 +128,43 @@ def uncalibrated_selfcompat_claims(
     return claims, len(admitted)
 
 
+def claims_from_edge_probabilities(prob: pd.DataFrame, config) -> pd.DataFrame:
+    """Accepted / rejected / unresolved claims from edge probabilities."""
+    rows = []
+    for parent in prob.index:
+        for child in prob.columns:
+            if parent == child:
+                continue
+            f = float(prob.loc[parent, child])
+            if f >= config.accepted_threshold:
+                status = "accepted"
+            elif f <= config.rejected_threshold:
+                status = "rejected"
+            else:
+                status = "unresolved"
+            rows.append({"parent": parent, "child": child, "frequency": f, "status": status})
+    return pd.DataFrame(rows)
+
+
+def _claim_columns(prefix: str, claims: pd.DataFrame, true_graph, n_vars: int) -> Dict[str, float]:
+    pr = accepted_precision_recall(claims, true_graph)
+    counts = status_counts(claims)
+    total = n_vars * (n_vars - 1)
+    return {
+        f"{prefix}_precision": pr["accepted_precision"],
+        f"{prefix}_recall": pr["accepted_recall"],
+        f"{prefix}_unresolved_rate": counts["n_unresolved"] / total if total else float("nan"),
+        f"{prefix}_n_accepted": float(counts["n_accepted"]),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Alpha-independent baselines
+# ---------------------------------------------------------------------------
+
 def baseline_summary(
     full_graph: pd.DataFrame,
     data_train: pd.DataFrame,
-    knowledge,
-    method: str,
     config,
     rng: np.random.Generator,
     candidates: List[pd.DataFrame],
@@ -130,52 +172,142 @@ def baseline_summary(
     raw_self_compat: float,
     var_names: List[str],
     true_graph: Optional[pd.DataFrame],
+    bootstrap_adjs: List[pd.DataFrame],
 ) -> Dict[str, float]:
-    # --- single run ---
-    if true_graph is not None:
-        sr_pr = directed_edge_precision_recall(full_graph, true_graph)
-        sr_shd = float(shd(full_graph, true_graph))
-        _, _, sr_sk_f1 = skeleton_f1(full_graph, true_graph)
-    else:
-        sr_pr = {"precision": float("nan"), "recall": float("nan")}
-        sr_shd = float("nan")
-        sr_sk_f1 = float("nan")
+    """Metrics of the baselines that do not depend on alpha."""
+    columns: Dict[str, float] = {}
 
-    # --- stability selection ---
-    stab_graph = stability_selection_graph(
-        data_train, knowledge, method, config, rng
-    )
+    # Single run.
     if true_graph is not None:
-        stab_pr = directed_edge_precision_recall(stab_graph, true_graph)
-        stab_shd = float(shd(stab_graph, true_graph))
-        _, _, stab_sk_f1 = skeleton_f1(stab_graph, true_graph)
-    else:
-        stab_pr = {"precision": float("nan"), "recall": float("nan")}
-        stab_shd = float("nan")
-        stab_sk_f1 = float("nan")
+        sr = directed_edge_precision_recall(full_graph, true_graph)
+        columns.update({
+            "single_run_precision": sr["precision"],
+            "single_run_recall": sr["recall"],
+            "single_run_shd": float(shd(full_graph, true_graph)),
+            "single_run_skeleton_f1": skeleton_f1(full_graph, true_graph)[2],
+        })
 
-    # --- uncalibrated self-compatibility ---
-    uncal_claims, uncal_n_selected = uncalibrated_selfcompat_claims(
+    # Stability selection.
+    stab_graph = stability_selection_graph(bootstrap_adjs, var_names, config.stability_threshold)
+    if true_graph is not None:
+        st = directed_edge_precision_recall(stab_graph, true_graph)
+        columns.update({
+            "stability_precision": st["precision"],
+            "stability_recall": st["recall"],
+            "stability_shd": float(shd(stab_graph, true_graph)),
+            "stability_skeleton_f1": skeleton_f1(stab_graph, true_graph)[2],
+        })
+
+    # Uncalibrated self-compatibility.
+    uncal_claims, uncal_n = uncalibrated_selfcompat_claims(
         candidates, candidate_scores, raw_self_compat, var_names, config
     )
-    uncal_pr = accepted_precision_recall(uncal_claims, true_graph)
-    uncal_counts = status_counts(uncal_claims)
-    total_claims = len(var_names) * (len(var_names) - 1)
-    uncal_unresolved_rate = (
-        uncal_counts["n_unresolved"] / total_claims if total_claims > 0 else float("nan")
-    )
+    columns.update(_claim_columns("uncal", uncal_claims, true_graph, len(var_names)))
+    columns["uncal_n_selected_graphs"] = float(uncal_n)
 
-    return {
-        "single_run_precision": sr_pr["precision"],
-        "single_run_recall": sr_pr["recall"],
-        "single_run_shd": sr_shd,
-        "single_run_skeleton_f1": sr_sk_f1,
-        "stability_precision": stab_pr["precision"],
-        "stability_recall": stab_pr["recall"],
-        "stability_shd": stab_shd,
-        "stability_skeleton_f1": stab_sk_f1,
-        "uncal_precision": uncal_pr["accepted_precision"],
-        "uncal_recall": uncal_pr["accepted_recall"],
-        "uncal_unresolved_rate": uncal_unresolved_rate,
-        "uncal_n_selected_graphs": float(uncal_n_selected),
-    }
+    # Bayesian order MCMC.
+    if config.run_bayesian:
+        try:
+            posterior = bayesian_edge_posterior(
+                data_train, rng, n_iterations=config.bayes_n_iterations
+            )
+            bayes_claims = claims_from_edge_probabilities(posterior, config)
+            columns.update(_claim_columns("bayes", bayes_claims, true_graph, len(var_names)))
+        except Exception as exc:
+            logger.warning("Bayesian baseline failed (%s).", exc)
+
+    return columns
+
+
+# ---------------------------------------------------------------------------
+# Localization ablations (per alpha)
+# ---------------------------------------------------------------------------
+
+def bootstrap_compatibility(
+    bootstrap: List[pd.DataFrame],
+    candidates: List[pd.DataFrame],
+    var_names: List[str],
+    distance_mode: str,
+    true_full_dag_marks: Optional[pd.DataFrame] = None,
+) -> Dict[str, object]:
+    """Scores for the full-variable bootstrap compatibility baseline.
+
+    Returns the candidates' mean distances to the bootstrap graphs, the
+    bootstrap graphs' own leave-one-out mean distances (the reference
+    distribution for the threshold), and the true graph's mean distance.
+    """
+    boot_proj = [project(G, var_names, distance_mode) for G in bootstrap]
+
+    def mean_distance(proj, skip=None):
+        ds = [graph_distance(proj, q, distance_mode) for k, q in enumerate(boot_proj) if k != skip]
+        return float(np.mean(ds)) if ds else 0.0
+
+    reference = [mean_distance(q, skip=k) for k, q in enumerate(boot_proj)]
+    candidate = [mean_distance(project(G, var_names, distance_mode)) for G in candidates]
+    truth = (
+        mean_distance(project(true_full_dag_marks, var_names, distance_mode))
+        if true_full_dag_marks is not None
+        else float("nan")
+    )
+    return {"reference": np.array(reference), "candidate": candidate, "truth": truth}
+
+
+def conformal_without_subsets(
+    data_cal: pd.DataFrame,
+    full_graph_marks: pd.DataFrame,
+    candidates: List[pd.DataFrame],
+    knowledge,
+    method: str,
+    config,
+    rng: np.random.Generator,
+    distance_mode: str,
+    n_chunks: int,
+    chunk_size: Optional[int],
+    true_full_dag_marks: Optional[pd.DataFrame] = None,
+) -> Dict[str, object]:
+    """Scores for CSCD run with the single subset S = V."""
+    var_names = list(full_graph_marks.index)
+    subsets = [var_names]
+    reference = {0: project(full_graph_marks, var_names, distance_mode)}
+    cal = calibration_scores(
+        data_cal, subsets, reference, knowledge, method, config,
+        n_resamples=n_chunks, rng=rng, distance_mode=distance_mode, chunk_size=chunk_size,
+    )
+    candidate = [
+        graph_distance(project(G, var_names, distance_mode), reference[0], distance_mode)
+        for G in candidates
+    ]
+    truth = (
+        graph_distance(project(true_full_dag_marks, var_names, distance_mode), reference[0], distance_mode)
+        if true_full_dag_marks is not None
+        else float("nan")
+    )
+    return {"calibration": cal, "candidate": candidate, "truth": truth}
+
+
+def ablation_columns(
+    prefix: str,
+    admitted: List[pd.DataFrame],
+    truth_included: float,
+    var_names: List[str],
+    true_graph: Optional[pd.DataFrame],
+    config,
+) -> Dict[str, float]:
+    """Claim metrics of a set of admitted candidate graphs (adjacency form)."""
+    claims = summarize_claims(
+        admitted, var_names,
+        accepted_threshold=config.accepted_threshold,
+        rejected_threshold=config.rejected_threshold,
+    )
+    columns = _claim_columns(prefix, claims, true_graph, len(var_names))
+    columns[f"{prefix}_n_selected_graphs"] = float(len(admitted))
+    columns[f"{prefix}_true_graph_included"] = truth_included
+    return columns
+
+
+def bootstrap_threshold(reference: np.ndarray, alpha: float) -> float:
+    """(1 - alpha) empirical quantile of the bootstrap reference distances."""
+    if len(reference) == 0:
+        return float("inf")
+    return float(np.quantile(reference, 1 - alpha))
+

@@ -24,6 +24,12 @@ class ExperimentConfig:
     n_calibration_resamples: int = 20   # N disjoint cal chunks; paper uses 20
     n_test_chunks: int = 20             # held-out chunks for empirical exceedance
     n_candidate_graphs: int = 80
+    # Candidate family: full-data run, a hyperparameter grid, bootstraps, and
+    # single-edge edits of the full-data run (see generate_candidate_graphs).
+    candidate_bootstrap_frac: float = 0.5
+    candidate_alpha_grid: Tuple[float, ...] = (0.001, 0.005, 0.01, 0.02, 0.1, 0.2)
+    candidate_max_parents_grid: Tuple[int, ...] = (1, 2, 3, 4)
+    require_pair_coverage: bool = True
 
     alpha_values: Tuple[float, ...] = (0.05, 0.10, 0.20)
     accepted_threshold: float = 0.90
@@ -36,6 +42,12 @@ class ExperimentConfig:
 
     stability_n_bootstraps: int = 50
     stability_threshold: float = 0.6
+
+    # Extra baselines: Bayesian order MCMC and the localization ablations
+    # (bootstrap compatibility, conformal without subsets).
+    run_bayesian: bool = True
+    bayes_n_iterations: int = 4000
+    run_ablations: bool = True
 
     random_seed: int = 123
 
@@ -60,7 +72,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         "--dataset",
-        choices=["synthetic", "sachs_real", "asia", "sachs_bn", "child", "csv"],
+        choices=["synthetic", "sachs_real", "asia", "sachs_bn", "child", "insurance", "alarm", "csv"],
         required=True,
     )
     parser.add_argument("--real_csv", type=str, default=None)
@@ -93,7 +105,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--accepted_threshold", type=float, default=0.90)
     parser.add_argument("--rejected_threshold", type=float, default=0.10)
     parser.add_argument(
-        "--distance_mode", choices=["directed", "skeleton"], default="directed"
+        "--distance_mode", choices=["skeleton", "pag"], default="skeleton",
+        help="Compare marginal skeletons (skeleton) or marginal PAGs (pag).",
+    )
+    parser.add_argument("--candidate_bootstrap_frac", type=float, default=0.5)
+    parser.add_argument("--no_bayesian", action="store_true", help="Skip the Bayesian baseline.")
+    parser.add_argument("--no_ablations", action="store_true", help="Skip the localization ablations.")
+    parser.add_argument(
+        "--no_pair_coverage",
+        action="store_true",
+        help="Do not add subsets to make every variable pair co-occur.",
     )
     parser.add_argument("--stability_n_bootstraps", type=int, default=50)
     parser.add_argument("--stability_threshold", type=float, default=0.6)

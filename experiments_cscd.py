@@ -54,6 +54,10 @@ def main() -> None:
         equal_chunks=args.equal_chunks,
         train_size=args.train_size,
         cal_chunk_size=args.cal_chunk_size,
+        candidate_bootstrap_frac=args.candidate_bootstrap_frac,
+        require_pair_coverage=not args.no_pair_coverage,
+        run_bayesian=not args.no_bayesian,
+        run_ablations=not args.no_ablations,
     )
 
     methods = [m.lower() for m in args.methods]
