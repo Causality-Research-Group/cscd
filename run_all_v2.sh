@@ -2,6 +2,7 @@
 # Run every revision experiment (resumable). Logs to results_v2/run.log.
 cd "$(dirname "$0")"
 export PYTHONPATH=.
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1
 PY=.venv/bin/python
 W=${N_WORKERS:-9}
 mkdir -p results_v2
@@ -15,5 +16,5 @@ $PY experiments_v2.py --workers $W \
   latent_random large_p50 nongauss_laplace sachs_obs sachs_pooled \
   bnlearn_asia bnlearn_child bnlearn_insurance bnlearn_alarm \
   latent_n1600 latent_n6400 n12800_N9 scale_p50 scale_p100 latent_n25600 kci_quadratic \
-  2>&1 | grep -v -i -E "warning|StructureScore" >> results_v2/run.log
+  2>&1 | grep --line-buffered -v -i -E "warning|StructureScore" >> results_v2/run.log
 echo "ALL DONE" >> results_v2/run.log
