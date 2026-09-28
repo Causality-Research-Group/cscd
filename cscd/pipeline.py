@@ -349,6 +349,8 @@ def fit_repeat(
         "failures": {"cal": cal_fail, "test": test_fail, "train_subsets_dropped": n_dropped},
         "true_graph": true_graph.loc[names, names].values.astype(np.int8) if true_graph is not None else None,
         "sep_cover": separation_cover(true_marks, names, subsets) if true_marks is not None else float("nan"),
+        "true_skel": (project(true_marks, names, "skeleton").loc[names, names].values != NO_EDGE).astype(np.int8)
+        if true_marks is not None else None,
     }
 
     # Baselines: bootstrap graphs, Bayesian posterior, full-data variants.

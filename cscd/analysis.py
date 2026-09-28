@@ -236,7 +236,10 @@ def record_metrics(rec: Dict, alpha: float = 0.1, gamma: float = 0.9, distance: 
     # Structural error of the full-data run (for the systematic-error study).
     t = truth
     A0 = cand_adj[0]
-    skel_err = ((A0 + A0.T) > 0) != ((t + t.T) > 0)
+    # True adjacencies over the observed variables: the marginal MAG skeleton
+    # (includes bidirected edges from hidden confounders), else the claims.
+    t_skel = rec["true_skel"] if rec.get("true_skel") is not None else ((t + t.T) > 0)
+    skel_err = ((A0 + A0.T) > 0) != (t_skel > 0)
     out["full_skel_errors"] = float(skel_err[np.triu_indices(t.shape[0], 1)].sum())
     out["full_shd"] = float(np.abs(A0 - t)[_offdiag(t.shape[0])].sum())
 
