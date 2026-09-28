@@ -115,8 +115,14 @@ def make_scenario(
     elif name != "linear":
         raise ValueError(f"Unknown scenario {name!r}.")
 
-    X = simulate_sem(B, W, n, noise, rng, quad)
-    X_test = simulate_sem(B, W, n_test, noise, rng, quad) if n_test > 0 else np.zeros((0, p))
+    if quad is None:
+        X = simulate_sem(B, W, n, noise, rng)
+        X_test = simulate_sem(B, W, n_test, noise, rng) if n_test > 0 else np.zeros((0, p))
+    else:
+        # One draw, split afterwards, so that the per-draw standardization is
+        # shared by the observed and the held-out sample (exchangeability).
+        X_all = simulate_sem(B, W, n + n_test, noise, rng, quad)
+        X, X_test = X_all[:n], X_all[n:]
 
     latent = set(int(v) for v in _hide(B, n_latent, latent_mode, rng))
     observed = [j for j in range(p) if j not in latent]

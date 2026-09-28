@@ -87,12 +87,12 @@ EXPERIMENTS: Dict[str, Dict] = {
     "nongauss_laplace": _exp(["pc", "lingam"], 20, opts=dict(run_full_data_baselines=False), data=dict(noise="laplace")),
     "latent_random": _exp(["pc", "fci"], 20, cfg=dict(p=25), opts=dict(run_bayes=False, run_full_data_baselines=False),
                           data=dict(n_latent=5, latent_mode="random")),
-    "sachs_obs": _exp(PCGESFCI, 20, cfg=dict(n_subsets=15), opts=dict(n_cal_chunks=9, run_full_data_baselines=False),
+    "sachs_obs": _exp(PCGESFCI, 20, cfg=dict(n_subsets=15), opts=dict(n_cal_chunks=9, run_full_data_baselines=False, n_test_chunks=3),
                       real="sachs_obs"),
-    "sachs_pooled": _exp(PCGESFCI, 20, cfg=dict(n_subsets=15), opts=dict(n_cal_chunks=9, run_full_data_baselines=False),
+    "sachs_pooled": _exp(PCGESFCI, 20, cfg=dict(n_subsets=15), opts=dict(n_cal_chunks=9, run_full_data_baselines=False, n_test_chunks=3),
                          real="sachs_pooled"),
     **{f"bnlearn_{net}": _exp(["pc", "fci"], 20, cfg=dict(n=4000, n_subsets=40, independence_test="gsq"),
-                              opts=dict(run_bayes=False, run_full_data_baselines=False), real=net)
+                              opts=dict(run_bayes=False, run_full_data_baselines=False, n_test_chunks=3), real=net)
        for net in ("asia", "child", "insurance", "alarm")},
     # E12: scaling.
     "scale_p50": _exp(["pc"], 5, cfg=dict(p=50, n_subsets=50), opts=LIGHT),

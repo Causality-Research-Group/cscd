@@ -220,7 +220,10 @@ def fit_repeat(
     n_tr = opts.train_size if opts.train_size is not None else int(round(opts.train_frac * n))
     D_tr = data.iloc[perm[:n_tr]].reset_index(drop=True)
     D_cal = data.iloc[perm[n_tr:]].reset_index(drop=True)
-    chunk = opts.cal_chunk_size or max(1, len(D_cal) // opts.n_cal_chunks)
+    # Without a fresh sample (real data), held-out chunks are carved from D_cal
+    # next to the calibration chunks, all of the same size.
+    n_split = opts.n_cal_chunks + (opts.n_test_chunks if test_data is None else 0)
+    chunk = opts.cal_chunk_size or max(1, len(D_cal) // n_split)
 
     # Full-data run first (also used by Markov-blanket subsets).
     k = min(len(names), max(3, int(np.ceil(config.subset_frac * len(names)))))
@@ -291,15 +294,15 @@ def fit_repeat(
         return {d: np.array(v) for d, v in scores.items()}, errors, failures
 
     t = time.perf_counter()
-    cal_chunks = _chunks(D_cal, opts.n_cal_chunks, chunk, rng)
+    all_chunks = _chunks(D_cal, n_split, chunk, rng)
+    cal_chunks = all_chunks[:opts.n_cal_chunks]
     cal, cal_err, cal_fail = chunk_scores(cal_chunks)
     times["calibration"] = time.perf_counter() - t
 
-    if test_data is not None and len(test_data) >= chunk:
+    if test_data is not None:
         test_chunks = _chunks(test_data, opts.n_test_chunks, chunk, rng)
     else:
-        rest = D_cal.iloc[len(cal_chunks) * chunk:].reset_index(drop=True)
-        test_chunks = _chunks(rest, opts.n_test_chunks, chunk, rng) if len(rest) >= chunk else []
+        test_chunks = all_chunks[opts.n_cal_chunks:]
     t = time.perf_counter()
     test, _, test_fail = chunk_scores(test_chunks)
     times["test_chunks"] = time.perf_counter() - t
@@ -386,13 +389,15 @@ def fit_repeat(
         rec["bootcompat_truth"] = mean_to_boot(project(true_marks, names, md)) if true_marks is not None else float("nan")
         # Conformal without subsets: reference = full-data run on D_tr, chunks of D_cal on all variables.
         refV = project(candidates[0], names, md)
-        ns_cal = []
+        ns_cal, ns_fail = [], 0
         for C in cal_chunks:
             try:
                 g = discover_marks(C, method, knowledge, config, random_state=int(rng.integers(1_000_000)))
                 ns_cal.append(distance_value(project(g, names, md), refV, d0))
-            except Exception:
-                pass
+            except Exception as exc:
+                ns_fail += 1
+                logger.debug("No-subset calibration chunk failed (%s).", exc)
+        rec["failures"]["nosub_cal"] = ns_fail
         rec["nosub_cal"] = np.array(ns_cal)
         rec["nosub_cand"] = np.array([distance_value(project(G, names, md), refV, d0) for G in candidates])
         rec["nosub_truth"] = distance_value(project(true_marks, names, md), refV, d0) if true_marks is not None else float("nan")
