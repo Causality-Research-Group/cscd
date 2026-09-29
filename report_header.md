@@ -4,7 +4,7 @@
 
 ## 0. Summary
 
-**Where things stand.** All P0 and P1 experiments of the plan (E1–E11) have run, and most P2 ones (E12–E14) too; §1 lists what ran and what is pending. The theory and writing items T1–T4, W3, W4, W6 and W8 are committed on a **local** `experiments/chris` branch of the paper repository. That repository's remote is Overleaf, whose git bridge does not accept branches, so nothing was pushed there (see §6).
+**Where things stand.** Every experiment of the plan (E1–E14) has run: 2 385 repeat×method records over 52 presets (including 5 unused full-protocol Child records), with no failed task. §1 lists each item with caveats. The theory and writing items T1–T4, W3, W4, W6 and W8 are committed on a **local** `experiments/chris` branch of the paper repository. That repository's remote is Overleaf, whose git bridge does not accept branches, so nothing was pushed there (see §6).
 
 **What the experiments show.**
 

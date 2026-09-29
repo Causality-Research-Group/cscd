@@ -223,8 +223,9 @@ def robust_tables():
              ("knowledge_correct_soft", "Correct, soft"), ("knowledge_noisy_hard", "Noisy, hard"),
              ("knowledge_noisy_soft", "Noisy, soft"), ("large_p50", "p = 50"), ("nongauss_laplace", "Laplace noise"),
              ("latent_random", "5 of 25 hidden (random)"), ("sachs_obs", "Sachs, observational (853)"),
-             ("sachs_pooled", "Sachs, pooled (7466)"), ("bnlearn_asia", "Asia"), ("bnlearn_child", "Child"),
-             ("bnlearn_insurance", "Insurance"), ("bnlearn_alarm", "Alarm"), ("kci_quadratic", "KCI, quadratic, p=8")]
+             ("sachs_pooled", "Sachs, pooled (7466)"), ("bnlearn_asia", "Asia"), ("bnlearn_light_child", "Child (reduced)"), ("bnlearn_light_insurance", "Insurance (reduced)"),
+             ("bnlearn_light_alarm", "Alarm (reduced)"), ("kci_quadratic", "KCI, quadratic, p=8"),
+             ("scale_p50", "Scaling p=50 (PC, CSCD only)"), ("scale_p100", "Scaling p=100 (PC, CSCD only)")]
     for exp, label in specs:
         df = load(exp)
         if df is None:

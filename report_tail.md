@@ -31,7 +31,8 @@ Raw records (`results_v2/*/rec_*.pkl`, about 300 MB in total) are **not** commit
 - **E7:** the adjustment-identification distance (gadjid) was not implemented. It is defined for DAGs/CPDAGs over all variables, not for marginal PAGs on subsets. The asymmetric skeleton weightings were evaluated instead.
 - **E4(b) "test misspecification that differs between full and subset runs"** was realised as the high-dimensional scenario (p = 50, n = 1000). Heteroscedastic noise was not run.
 - **E11:** 8 of 30 repeats have no confounded treatment–outcome pair in the true DAG and contribute no decision numbers.
-- **Repeats:** 30 for main and E4 (20 for p = 50), 20 elsewhere (30 for n ≤ 800).
+- **Repeats:** 30 for main and E4 (20 for p = 50), 20 elsewhere (30 for n ≤ 800); 10 for KCI, 5 for the scaling runs.
+- **bnlearn Child, Insurance and Alarm used a reduced protocol:** 10 repeats, 30 candidates, 10 bootstraps, 20 subsets, grid {0.01, 0.1}, no ablations. With the full protocol, G-square PC/FCI took 2–3 hours per repeat; this was spotted mid-run, and the queue was stopped and reordered. Five full-protocol Child records exist but are not used. Asia ran with the full protocol.
 - **Two paper-writing subagents** drafted the theory, related work and results text. I checked every number they wrote against the generated tables and corrected five statements: repeat counts, one rate, the distance summary, the adjacency-precision comparison for GES, and the description of the held-out sample. I also removed a sentence that named a reviewer.
 - **Literature:** 9 references were verified online and added. Faller et al. (2024) use the ADMG latent projection, give binary notions of compatibility, and provide no calibration. Six items could not be fully verified (Strieder & Drton, Debeire et al., Henckel et al., R²-sortability, Triantafillou & Tsamardinos, and two 2026 arXiv papers); they are **not** cited. Colombo et al.'s exact FCI rate is not quoted.
 
@@ -46,13 +47,15 @@ It is candid that claim precision does not beat voting over the unfiltered pool.
 
 ## 6. Paper repository: not pushed
 
-`6ab804def2ecfc179daef8f7` has origin `git.overleaf.com`. Overleaf's git bridge supports a single branch, so a push would overwrite the live Overleaf project. All paper changes are therefore **local commits on branch `experiments/chris`** of that clone. The main text compiles to exactly 8 pages (25 pages with the appendix). To publish, after review:
+`6ab804def2ecfc179daef8f7` has origin `git.overleaf.com`. Overleaf's git bridge supports a single branch, so a push would overwrite the live Overleaf project. All paper changes are therefore **local commits on branch `experiments/chris`** of that clone (`git log main..experiments/chris`). The paper compiles without errors or undefined references (25 pages with the appendix).
+
+**Page limit.** The main text through the conclusion ends on page 8. The *AI use statement* starts at the bottom of page 8 and runs six lines onto page 9, before the references. Please check whether AISTATS 2027 counts that statement toward the 8 pages. If it does, about 6 lines must still be cut. To publish, after review:
 
 ```bash
 cd "AISTATS 27/6ab804def2ecfc179daef8f7" && git checkout main && git merge experiments/chris && git push origin main
 ```
 
-Remaining `\todo` markers in the paper: see §7.
+Remaining `\todo` markers in the paper: none (checked with `grep -rn todo sections appendices`).
 
 ## 7. Reproducing
 

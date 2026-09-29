@@ -4,7 +4,7 @@
 
 ## 0. Summary
 
-**Where things stand.** All P0 and P1 experiments of the plan (E1–E11) have run, and most P2 ones (E12–E14) too; §1 lists what ran and what is pending. The theory and writing items T1–T4, W3, W4, W6 and W8 are committed on a **local** `experiments/chris` branch of the paper repository. That repository's remote is Overleaf, whose git bridge does not accept branches, so nothing was pushed there (see §6).
+**Where things stand.** Every experiment of the plan (E1–E14) has run: 2 385 repeat×method records over 52 presets (including 5 unused full-protocol Child records), with no failed task. §1 lists each item with caveats. The theory and writing items T1–T4, W3, W4, W6 and W8 are committed on a **local** `experiments/chris` branch of the paper repository. That repository's remote is Overleaf, whose git bridge does not accept branches, so nothing was pushed there (see §6).
 
 **What the experiments show.**
 
@@ -177,9 +177,11 @@ Paired differences (set − single): PC −0.019 ± 0.008, GES −0.006 ± 0.011
   - Accepted adjacencies are **all** in the consensus network (adjacency precision 1.00, recall 0.17–0.32), but directed precision is below the single run (PC 0.36 vs 0.44).
   - The 17-edge consensus network is **never** admitted: A(G\*) ≈ 0.37 against τ ≈ 0.14, which is worth a sentence in the paper.
   - The pooled data (7466 cells) are reported only as a stress test.
-- **bnlearn.**
-  - Asia (full protocol): exceedance 0.07 (PC) and 0.12 (FCI); G\* retained in 95–100% of repeats.
-  - Child, Insurance and Alarm use the reduced protocol (App. A.9).
+- **bnlearn** (G-square tests, n = 4000). Calibration holds on all four networks (exceedance 0.03–0.13).
+  - Asia (full protocol): G\* retained in 95–100% of repeats.
+  - Child, Insurance and Alarm (reduced protocol): G\* retained in only 0–40%, because G-square local discovery errs on most subsets.
+  - Accepted directed claims beat the single run on Insurance (PC 0.79 vs 0.74) and Alarm (PC 0.82 vs 0.78; FCI 0.66 vs 0.59), but not on Child with PC (0.65 vs 0.68).
+  - **Stability selection breaks down on discrete data.** Bootstrap resamples contain about twice as many edges as the single run (about 60 vs 26 on Child), because duplicated rows inflate G-square statistics. Its directed precision is 0.21–0.45 on Child and Insurance. This is a real property of bootstrapping CI tests, not a bug (checked on the records); subsampling would avoid it.
 - **E14: KCI on quadratic data** (p = 8, n = 900, 10 repeats). Exceedance 0.16 ± 0.09 with only 5 held-out chunks; G\* retained in 90% of repeats; directed precision 0.67 vs 0.61 for the single run. A nonlinear base test removes the shared bias of case (b).
 - **E12: runtime** (PC, one core).
   - About 78 s per repeat at p = 20 with every baseline; about 28 s for CSCD alone (m = 25).
@@ -218,7 +220,8 @@ Raw records (`results_v2/*/rec_*.pkl`, about 300 MB in total) are **not** commit
 - **E7:** the adjustment-identification distance (gadjid) was not implemented. It is defined for DAGs/CPDAGs over all variables, not for marginal PAGs on subsets. The asymmetric skeleton weightings were evaluated instead.
 - **E4(b) "test misspecification that differs between full and subset runs"** was realised as the high-dimensional scenario (p = 50, n = 1000). Heteroscedastic noise was not run.
 - **E11:** 8 of 30 repeats have no confounded treatment–outcome pair in the true DAG and contribute no decision numbers.
-- **Repeats:** 30 for main and E4 (20 for p = 50), 20 elsewhere (30 for n ≤ 800).
+- **Repeats:** 30 for main and E4 (20 for p = 50), 20 elsewhere (30 for n ≤ 800); 10 for KCI, 5 for the scaling runs.
+- **bnlearn Child, Insurance and Alarm used a reduced protocol:** 10 repeats, 30 candidates, 10 bootstraps, 20 subsets, grid {0.01, 0.1}, no ablations. With the full protocol, G-square PC/FCI took 2–3 hours per repeat; this was spotted mid-run, and the queue was stopped and reordered. Five full-protocol Child records exist but are not used. Asia ran with the full protocol.
 - **Two paper-writing subagents** drafted the theory, related work and results text. I checked every number they wrote against the generated tables and corrected five statements: repeat counts, one rate, the distance summary, the adjacency-precision comparison for GES, and the description of the held-out sample. I also removed a sentence that named a reviewer.
 - **Literature:** 9 references were verified online and added. Faller et al. (2024) use the ADMG latent projection, give binary notions of compatibility, and provide no calibration. Six items could not be fully verified (Strieder & Drton, Debeire et al., Henckel et al., R²-sortability, Triantafillou & Tsamardinos, and two 2026 arXiv papers); they are **not** cited. Colombo et al.'s exact FCI rate is not quoted.
 
@@ -233,13 +236,15 @@ It is candid that claim precision does not beat voting over the unfiltered pool.
 
 ## 6. Paper repository: not pushed
 
-`6ab804def2ecfc179daef8f7` has origin `git.overleaf.com`. Overleaf's git bridge supports a single branch, so a push would overwrite the live Overleaf project. All paper changes are therefore **local commits on branch `experiments/chris`** of that clone. The main text compiles to exactly 8 pages (25 pages with the appendix). To publish, after review:
+`6ab804def2ecfc179daef8f7` has origin `git.overleaf.com`. Overleaf's git bridge supports a single branch, so a push would overwrite the live Overleaf project. All paper changes are therefore **local commits on branch `experiments/chris`** of that clone (`git log main..experiments/chris`). The paper compiles without errors or undefined references (25 pages with the appendix).
+
+**Page limit.** The main text through the conclusion ends on page 8. The *AI use statement* starts at the bottom of page 8 and runs six lines onto page 9, before the references. Please check whether AISTATS 2027 counts that statement toward the 8 pages. If it does, about 6 lines must still be cut. To publish, after review:
 
 ```bash
 cd "AISTATS 27/6ab804def2ecfc179daef8f7" && git checkout main && git merge experiments/chris && git push origin main
 ```
 
-Remaining `\todo` markers in the paper: see §7.
+Remaining `\todo` markers in the paper: none (checked with `grep -rn todo sections appendices`).
 
 ## 7. Reproducing
 
@@ -253,7 +258,7 @@ PYTHONPATH=. .venv/bin/python analyze_v2.py
 
 ## Appendix A: generated tables
 
-*Built by `make_report_tables.py` on 2026-09-29 10:01. Mean ± standard error over repeats; α = 0.1, γ = 0.9 unless stated.*
+*Built by `make_report_tables.py` on 2026-09-29 12:12. Mean ± standard error over repeats; α = 0.1, γ = 0.9 unless stated.*
 
 ### E1/E3/E5 — Main experiment: claims against baselines (p=20, n=3200, N=9 chunks)
 
@@ -572,10 +577,15 @@ Coverage of the true effect by the range of IDA estimates over the set:
 | Sachs, pooled (7466) | PC | 0.050 ± 0.027 | 0.992 ± 0.004 | 0.45 ± 0.11 | 0.543 ± 0.017 | 0.244 ± 0.017 | 0.319 ± 0.018 | 0.406 ± 0.011 | 0.537 ± 0.018 |
 | Asia | FCI | 0.117 ± 0.050 | 0.477 ± 0.057 | 0.95 ± 0.05 | 0.515 ± 0.011 | 0.581 ± 0.014 | 0.492 ± 0.006 | 0.628 ± 0.026 | 0.531 ± 0.012 |
 | Asia | PC | 0.067 ± 0.031 | 0.674 ± 0.054 | 1.00 ± 0.00 | 0.465 ± 0.025 | 0.275 ± 0.028 | 0.566 ± 0.020 | 0.539 ± 0.029 | 0.480 ± 0.041 |
-| Child | not run |  |  |  |  |  |  |  |  |
-| Insurance | not run |  |  |  |  |  |  |  |  |
-| Alarm | not run |  |  |  |  |  |  |  |  |
+| Child (reduced) | FCI | 0.033 ± 0.033 | 0.448 ± 0.035 | 0.00 ± 0.00 | 0.662 ± 0.022 | 0.836 ± 0.019 | 0.635 ± 0.014 | 0.223 ± 0.007 | 0.598 ± 0.021 |
+| Child (reduced) | PC | 0.033 ± 0.033 | 0.206 ± 0.074 | 0.00 ± 0.00 | 0.649 ± 0.011 | 0.392 ± 0.107 | 0.675 ± 0.024 | 0.214 ± 0.011 | 0.598 ± 0.026 |
+| Insurance (reduced) | FCI | 0.133 ± 0.054 | 0.432 ± 0.052 | 0.00 ± 0.00 | 0.661 ± 0.014 | 0.600 ± 0.012 | 0.647 ± 0.011 | 0.453 ± 0.015 | 0.686 ± 0.015 |
+| Insurance (reduced) | PC | 0.100 ± 0.071 | 0.145 ± 0.050 | 0.00 ± 0.00 | 0.787 ± 0.033 | 0.373 ± 0.065 | 0.744 ± 0.014 | 0.273 ± 0.008 | 0.553 ± 0.018 |
+| Alarm (reduced) | FCI | 0.133 ± 0.074 | 0.974 ± 0.009 | 0.40 ± 0.16 | 0.664 ± 0.007 | 0.780 ± 0.014 | 0.588 ± 0.009 | 0.697 ± 0.010 | 0.662 ± 0.007 |
+| Alarm (reduced) | PC | 0.067 ± 0.044 | 0.587 ± 0.013 | 0.00 ± 0.00 | 0.819 ± 0.018 | 0.780 ± 0.017 | 0.783 ± 0.018 | 0.865 ± 0.014 | 0.906 ± 0.009 |
 | KCI, quadratic, p=8 | PC | 0.160 ± 0.093 | 0.877 ± 0.043 | 0.90 ± 0.10 | 0.668 ± 0.075 | 0.311 ± 0.038 | 0.614 ± 0.047 | 0.705 ± 0.054 | 0.703 ± 0.101 |
+| Scaling p=50 (PC, CSCD only) | PC | 0.040 ± 0.024 | 0.311 ± 0.096 | 0.80 ± 0.20 | 0.687 ± 0.027 | 0.802 ± 0.033 | 0.625 ± 0.028 | 0.766 ± 0.027 | 0.780 ± 0.017 |
+| Scaling p=100 (PC, CSCD only) | PC | 0.100 ± 0.032 | 0.398 ± 0.091 | 1.00 ± 0.00 | 0.672 ± 0.047 | 0.892 ± 0.021 | 0.633 ± 0.042 | 0.690 ± 0.025 | 0.819 ± 0.022 |
 
 For Sachs and bnlearn, 'G* incl.' refers to the reference network (Sachs: 17-edge consensus).
 

@@ -127,7 +127,7 @@ def t_claims(out):
     head = " & ".join(r"\multicolumn{3}{c}{" + M[m] + "}" for m in ms)
     cm = "".join(f"\\cmidrule(lr){{{2+3*i}-{4+3*i}}}" for i in range(len(ms)))
     lines = [r"\begin{tabular}{l" + "ccc" * len(ms) + "}", r"\toprule", f" & {head} \\\\ {cm}",
-             "Estimator & " + " & ".join(["Adj.\\ prec. & Adj.\\ rec. & AP"] * len(ms)) + r" \\", r"\midrule"]
+             "Estimator & " + " & ".join(["Adj.\\ prec. & Adj.\\ rec. & Dir.\\ AP"] * len(ms)) + r" \\", r"\midrule"]
     for lab, a, b, ap in est:
         cells = []
         for m in ms:
@@ -156,12 +156,40 @@ def t_generic(out, name, specs, cols):
     write(out, name, lines)
 
 
+def t_baselines_full(out):
+    """Every estimator, directed and adjacency level, D_train and full-data variants."""
+    main = load("main_v2")
+    est = [("CSCD (ours)", "cscd", "cscd"), ("Candidate pool, no filter", "nofilter", "nofilter"),
+           ("Uncalibrated self-comp.", "uncal", "uncal"), ("Single run, $D_{\\mathrm{train}}$", "single", "single"),
+           ("Single run, $D$", "singleF", None), ("Stability sel.\\ 0.6, $D_{\\mathrm{train}}$", "stab", "stab"),
+           ("Stability sel.\\ 0.6, $D$", "stabF", "stabF"), ("Stability, MB bound $E[V]\\le1$", "stabMB", None),
+           ("Bootstrap freq.\\ $\\ge\\gamma$, $D_{\\mathrm{train}}$", "stabfreq", "stabfreq"),
+           ("Bootstrap freq.\\ $\\ge\\gamma$, $D$", "stabFfreq", "stabFfreq"),
+           ("Order MCMC, $D_{\\mathrm{train}}$", "bayes", "bayes"), ("Order MCMC, $D$", "bayesF", "bayesF"),
+           ("Bootstrap compat., median", "bcmed", None), ("Bootstrap compat., $(1-\\alpha)$ q.", "bcq", None),
+           ("Conformal, no subsets", "nosub", None)]
+    lines = [r"\begin{tabular}{llccccc}", r"\toprule",
+             r"Method & Estimator & Dir.\ prec. & Dir.\ rec. & Dir.\ AP & Adj.\ prec. & Adj.\ rec. \\", r"\midrule"]
+    for r in rows(main):
+        for i, (lab, k, sk) in enumerate(est):
+            adjp = c(r, f"{sk}_skprec", 3, se=False) if sk else "--"
+            adjr = c(r, f"{sk}_skrec", 3, se=False) if sk else "--"
+            if sk in ("stabfreq", "stabFfreq"):
+                adjp, adjr = c(r, f"{sk}_skprec", 3, se=False), c(r, f"{sk}_skrec", 3, se=False)
+            lines.append(f"{M[r.method] if i == 0 else ''} & {lab} & {c(r, k + '_precision', 3, se=False)} & "
+                         f"{c(r, k + '_recall', 3, se=False)} & {c(r, k + '_avg_precision', 3, se=False)} & {adjp} & {adjr} \\\\")
+        lines.append(r"\addlinespace")
+    lines[-1] = r"\bottomrule"
+    lines.append(r"\end{tabular}")
+    write(out, "baselines_full.tex", lines)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="results_v2/tables")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    for f in (t_calibration, t_chunk, t_systematic, t_claims):
+    for f in (t_calibration, t_chunk, t_systematic, t_claims, t_baselines_full):
         try:
             f(a.out)
         except Exception as exc:
@@ -187,8 +215,9 @@ if __name__ == "__main__":
                ("knowledge_correct_soft", "Correct, soft"), ("knowledge_noisy_hard", "Noisy, hard"),
                ("knowledge_noisy_soft", "Noisy, soft"), ("large_p50", "$p{=}50$"), ("nongauss_laplace", "Laplace noise"),
                ("latent_random", "5 of 25 hidden"), ("sachs_obs", "Sachs (obs., 853)"), ("sachs_pooled", "Sachs (pooled)"),
-               ("bnlearn_asia", "Asia"), ("bnlearn_child", "Child"), ("bnlearn_insurance", "Insurance"),
-               ("bnlearn_alarm", "Alarm"), ("kci_quadratic", "KCI, quadratic")],
+               ("bnlearn_asia", "Asia"), ("bnlearn_light_child", "Child$^\\dagger$"),
+               ("bnlearn_light_insurance", "Insurance$^\\dagger$"), ("bnlearn_light_alarm", "Alarm$^\\dagger$"),
+               ("kci_quadratic", "KCI, quadratic")],
               [("exceedance", "Exceed.", 3), ("admission", "Admitted", 2), ("true_included", r"$G^\ast$ incl.", 2),
                ("cscd_skprec", "Adj.\\ prec.", 3), ("cscd_skrec", "Adj.\\ rec.", 3), ("cscd_precision", "Dir.\\ prec.", 3),
                ("single_precision", "Single dir.\\ prec.", 3)])

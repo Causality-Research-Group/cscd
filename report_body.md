@@ -146,9 +146,11 @@ Paired differences (set − single): PC −0.019 ± 0.008, GES −0.006 ± 0.011
   - Accepted adjacencies are **all** in the consensus network (adjacency precision 1.00, recall 0.17–0.32), but directed precision is below the single run (PC 0.36 vs 0.44).
   - The 17-edge consensus network is **never** admitted: A(G\*) ≈ 0.37 against τ ≈ 0.14, which is worth a sentence in the paper.
   - The pooled data (7466 cells) are reported only as a stress test.
-- **bnlearn.**
-  - Asia (full protocol): exceedance 0.07 (PC) and 0.12 (FCI); G\* retained in 95–100% of repeats.
-  - Child, Insurance and Alarm use the reduced protocol (App. A.9).
+- **bnlearn** (G-square tests, n = 4000). Calibration holds on all four networks (exceedance 0.03–0.13).
+  - Asia (full protocol): G\* retained in 95–100% of repeats.
+  - Child, Insurance and Alarm (reduced protocol): G\* retained in only 0–40%, because G-square local discovery errs on most subsets.
+  - Accepted directed claims beat the single run on Insurance (PC 0.79 vs 0.74) and Alarm (PC 0.82 vs 0.78; FCI 0.66 vs 0.59), but not on Child with PC (0.65 vs 0.68).
+  - **Stability selection breaks down on discrete data.** Bootstrap resamples contain about twice as many edges as the single run (about 60 vs 26 on Child), because duplicated rows inflate G-square statistics. Its directed precision is 0.21–0.45 on Child and Insurance. This is a real property of bootstrapping CI tests, not a bug (checked on the records); subsampling would avoid it.
 - **E14: KCI on quadratic data** (p = 8, n = 900, 10 repeats). Exceedance 0.16 ± 0.09 with only 5 held-out chunks; G\* retained in 90% of repeats; directed precision 0.67 vs 0.61 for the single run. A nonlinear base test removes the shared bias of case (b).
 - **E12: runtime** (PC, one core).
   - About 78 s per repeat at p = 20 with every baseline; about 28 s for CSCD alone (m = 25).
