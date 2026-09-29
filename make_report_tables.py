@@ -71,6 +71,21 @@ def main_tables():
             rows.append([label, cell(r, f"{k}_precision"), cell(r, f"{k}_recall"),
                          cell(r, f"{k}_avg_precision"), cell(r, f"{k}_prec_at_rec0.7")])
         print(table(rows, ["Estimator", "Precision", "Recall", "Avg. precision (curve)", "Prec. @ recall 0.7"]))
+    section("E3 — Adjacency-level claims (pair accepted if either direction is; truth = MAG skeleton)")
+    adj = [("CSCD accepted (γ=0.9)", "cscd_skprec", "cscd_skrec", "cscd_skap"),
+           ("Candidate pool, no filter", "nofilter_skprec", "nofilter_skrec", "nofilter_skap"),
+           ("Uncalibrated self-comp.", "uncal_skprec", "uncal_skrec", "uncal_skap"),
+           ("Single run (D_train)", "single_skprec", "single_skrec", None),
+           ("Stability sel. 0.6 (D_train)", "stab_skprec", "stab_skrec", None),
+           ("Stability sel. 0.6 (full D)", "stabF_skprec", "stabF_skrec", None),
+           ("Bootstrap freq. ≥ γ (D_train)", "stabfreq_skprec", "stabfreq_skrec", "stabfreq_skap"),
+           ("Bootstrap freq. ≥ γ (full D)", "stabFfreq_skprec", "stabFfreq_skrec", "stabFfreq_skap"),
+           ("Order MCMC ≥ γ (D_train)", "bayes_skprec", "bayes_skrec", "bayes_skap"),
+           ("Order MCMC ≥ γ (full D)", "bayesF_skprec", "bayesF_skrec", "bayesF_skap")]
+    for _, r in d.iterrows():
+        print(f"\n**{M.get(r.method, r.method)}**\n")
+        rows = [[lab, cell(r, a), cell(r, b), cell(r, c) if c else "–"] for lab, a, b, c in adj]
+        print(table(rows, ["Estimator", "Adjacency precision", "Adjacency recall", "Adjacency AP"]))
     section("E1 — Calibration and selectivity (main experiment)")
     rows = []
     for _, r in d.iterrows():

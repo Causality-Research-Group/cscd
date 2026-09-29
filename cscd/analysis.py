@@ -46,6 +46,32 @@ def skeleton_claim_precision(freq: np.ndarray, truth: np.ndarray, gamma: float) 
     return float(np.sum(acc & ts) / max(acc.sum(), 1))
 
 
+def skeleton_metrics(freq: np.ndarray, truth_skel: np.ndarray, gamma: float) -> Dict[str, float]:
+    """Adjacency-level claims: pair accepted if max(f[x,y], f[y,x]) >= gamma."""
+    p = truth_skel.shape[0]
+    iu = np.triu_indices(p, 1)
+    fs = np.maximum(freq, freq.T)[iu]
+    ts = truth_skel[iu] > 0
+    acc = fs >= gamma - 1e-12
+    tp = np.sum(acc & ts)
+    out = {"skprec": tp / max(acc.sum(), 1), "skrec": tp / max(ts.sum(), 1)}
+    # Average precision over pairs.
+    order = np.argsort(-fs, kind="stable")
+    f_s, t_s = fs[order], ts[order]
+    ap, hits, prev, i = 0.0, 0, 0.0, 0
+    while i < len(f_s):
+        j = i
+        while j < len(f_s) and f_s[j] == f_s[i]:
+            j += 1
+        hits += np.sum(t_s[i:j])
+        rec = hits / max(ts.sum(), 1)
+        if f_s[i] > 0:
+            ap += (rec - prev) * hits / j
+        prev, i = rec, j
+    out["skap"] = float(ap)
+    return out
+
+
 def freq_of(adjs: Optional[np.ndarray]) -> Optional[np.ndarray]:
     if adjs is None or len(adjs) == 0:
         return None
@@ -157,6 +183,7 @@ def record_metrics(rec: Dict, alpha: float = 0.1, gamma: float = 0.9, distance: 
     if truth is None:
         return out
 
+    t_skel = rec["true_skel"] if rec.get("true_skel") is not None else ((truth + truth.T) > 0).astype(int)
     cand_adj = rec["cand_adj"]
     sets = {
         "cscd": cand_adj[adm] if adm.any() else None,
@@ -171,11 +198,14 @@ def record_metrics(rec: Dict, alpha: float = 0.1, gamma: float = 0.9, distance: 
         m = claim_metrics(f, truth, gamma)
         out.update({f"{name}_{k}": v for k, v in m.items()})
         out[f"{name}_skel_precision"] = skeleton_claim_precision(f, truth, gamma)
+        out.update({f"{name}_{k}": v for k, v in skeleton_metrics(f, t_skel, gamma).items()})
         for k, v in pr_summary(f, truth).items():
             out[f"{name}_{k}"] = v
 
     # Single run (D_train and full data) and its hyperparameter path.
     out.update({f"single_{k}": v for k, v in graph_pr(cand_adj[0], truth).items()})
+    sk = skeleton_metrics(cand_adj[0].astype(float), t_skel, 1.0)
+    out["single_skprec"], out["single_skrec"] = sk["skprec"], sk["skrec"]
     if rec.get("single_full_adj") is not None:
         out.update({f"singleF_{k}": v for k, v in graph_pr(rec["single_full_adj"], truth).items()})
     path = cand_adj[: 1 + rec.get("n_grid", 0)]
@@ -191,6 +221,9 @@ def record_metrics(rec: Dict, alpha: float = 0.1, gamma: float = 0.9, distance: 
             continue
         out.update({f"{tag}_{k}": v for k, v in graph_pr(stability_graph(boot, 0.6), truth).items()})
         f = boot.mean(axis=0)
+        sk = skeleton_metrics(np.maximum(f, f.T), t_skel, 0.6)
+        out[f"{tag}_skprec"], out[f"{tag}_skrec"] = sk["skprec"], sk["skrec"]
+        out.update({f"{tag}freq_{k}": v for k, v in skeleton_metrics(f, t_skel, gamma).items()})
         m = claim_metrics(f, truth, gamma)
         out.update({f"{tag}freq_{k}": v for k, v in m.items()})
         for k, v in pr_summary(f, truth).items():
@@ -207,6 +240,10 @@ def record_metrics(rec: Dict, alpha: float = 0.1, gamma: float = 0.9, distance: 
             continue
         m = claim_metrics(post, truth, gamma)
         out.update({f"{tag}_{k}": v for k, v in m.items()})
+        # Adjacency posterior: P(x -> y) + P(y -> x) (DAG samples, disjoint events).
+        adjpost = np.clip(post + post.T, 0, 1)
+        sk = skeleton_metrics(adjpost, t_skel, gamma)
+        out[f"{tag}_skprec"], out[f"{tag}_skrec"], out[f"{tag}_skap"] = sk["skprec"], sk["skrec"], sk["skap"]
         for k, v in pr_summary(post, truth).items():
             out[f"{tag}_{k}"] = v
 
