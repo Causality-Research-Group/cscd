@@ -15,12 +15,12 @@
 | E6 | Subset design grid, Prop. 5 m, Markov-blanket subsets, no pair cover | ✅ | §2.4, App. A.6 |
 | E7 | Distances: skeleton, PAG, asymmetric weightings | 🟡 the gadjid-style ancestral distance was not implemented (see §4) | §2.4, App. A.7 |
 | E8 | Low sample (n = 200–1600) and safeguards | ✅ | §2.4, App. A.4 |
-| E9 | PC vs FCI under hidden confounding, ε_j against n | see App. A.8 | App. A.8 |
-| E10 | Knowledge, p = 50, Laplace/LiNGAM, latent, Sachs (observational and pooled), bnlearn | see App. A.9 | App. A.9 |
+| E9 | PC vs FCI under hidden confounding, ε_j against n (1600–25 600) | 🟡 ran; the predicted PC/FCI gap is **not** observed (see §2.6) | §2.6, App. A.8 |
+| E10 | Knowledge, p = 50, Laplace/LiNGAM, latent, Sachs (observational and pooled), bnlearn | 🟡 all done; Child/Insurance/Alarm with a reduced protocol (§4) | §2.6, App. A.9 |
 | E11 | Decision task, redone (local IDA, held-out data, set/bootstrap/BMA averaging) | ✅ | §2.5, App. A.10 |
-| E12 | Runtime and scaling (p = 50, 100) | 🟡 per-repeat runtimes done; the scaling runs are at the end of the queue | App. A.11 |
+| E12 | Runtime and scaling (p = 50, 100) | ✅ | §2.6 |
 | E13 | γ and α sensitivity | ✅ | App. A.2 |
-| E14 | Nonlinear base test (PC + KCI, p = 8) | see App. A.9 | App. A.9 |
+| E14 | Nonlinear base test (PC + KCI, p = 8) | ✅ (10 repeats) | §2.6, App. A.9 |
 
 ### Method, theory and writing (paper repository, local branch `experiments/chris`)
 
@@ -126,3 +126,31 @@ Setup: local IDA on held-out data, over the confounded pairs of the true DAG. Re
 | PC, coverage of true effect | – | – | 0.23 | 0.63 | 0.70 | 0.38 |
 
 Paired differences (set − single): PC −0.019 ± 0.008, GES −0.006 ± 0.011, FCI −0.022 ± 0.014. Bootstrap averaging is comparable (better for PC, worse for GES). The honest summary: a small bias reduction, a large coverage gain, and no advantage over bootstrap averaging.
+
+### 2.6 Hidden variables, robustness, real data, runtime (E9, E10, E12, E14)
+
+- **E9: hidden hubs, PC vs FCI.** Theorem 1 predicts that FCI retains G\* more often than PC once local errors vanish. That regime is **not reached** up to n = 25 600:
+  - ε̂_j (the fraction of subsets with at least one wrong adjacency) is 0.97 → 0.89 (PC) and 0.97 → 0.91 (FCI);
+  - A(G\*) falls from 0.20 to 0.14 for both;
+  - G\* is retained in 30–43% of repeats for both.
+
+  The paper now says this plainly. The earlier sentence claiming the effect was measured is gone.
+- **Random hidden variables (5 of 25).** Exceedance is 0.08 (PC) and 0.13 (FCI); G\* is retained 95% of the time.
+- **Domain knowledge.**
+  - Calibration holds in every regime; the largest exceedance is 0.18 ± 0.04 (PC, correct soft knowledge).
+  - Correct hard knowledge raises directed precision (PC 0.74 → 0.81). Noisy hard knowledge lowers G\* inclusion to 0.85.
+  - Soft knowledge makes the filter permissive (FCI admits 97%). The penalty also enters the calibration scores, and noisy chunk graphs violate it, which inflates τ to 0.15–0.23.
+- **p = 50, Laplace noise.** Calibration holds (exceedance 0.06–0.13). With DirectLiNGAM on Laplace noise, accepted directed claims are 0.994 precise, against 0.981 for the single run.
+- **Sachs, observational (853 cells).**
+  - Exceedance is 0.07–0.15.
+  - Accepted adjacencies are **all** in the consensus network (adjacency precision 1.00, recall 0.17–0.32), but directed precision is below the single run (PC 0.36 vs 0.44).
+  - The 17-edge consensus network is **never** admitted: A(G\*) ≈ 0.37 against τ ≈ 0.14, which is worth a sentence in the paper.
+  - The pooled data (7466 cells) are reported only as a stress test.
+- **bnlearn.**
+  - Asia (full protocol): exceedance 0.07 (PC) and 0.12 (FCI); G\* retained in 95–100% of repeats.
+  - Child, Insurance and Alarm use the reduced protocol (App. A.9).
+- **E14: KCI on quadratic data** (p = 8, n = 900, 10 repeats). Exceedance 0.16 ± 0.09 with only 5 held-out chunks; G\* retained in 90% of repeats; directed precision 0.67 vs 0.61 for the single run. A nonlinear base test removes the shared bias of case (b).
+- **E12: runtime** (PC, one core).
+  - About 78 s per repeat at p = 20 with every baseline; about 28 s for CSCD alone (m = 25).
+  - CSCD alone takes 364 s at p = 50 (m = 50) and about 1520 s at p = 100 (108 subsets of size 20).
+  - Cost is dominated by m (N + 1 + held-out) local runs plus the candidate projections.

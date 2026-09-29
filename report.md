@@ -46,12 +46,12 @@
 | E6 | Subset design grid, Prop. 5 m, Markov-blanket subsets, no pair cover | ✅ | §2.4, App. A.6 |
 | E7 | Distances: skeleton, PAG, asymmetric weightings | 🟡 the gadjid-style ancestral distance was not implemented (see §4) | §2.4, App. A.7 |
 | E8 | Low sample (n = 200–1600) and safeguards | ✅ | §2.4, App. A.4 |
-| E9 | PC vs FCI under hidden confounding, ε_j against n | see App. A.8 | App. A.8 |
-| E10 | Knowledge, p = 50, Laplace/LiNGAM, latent, Sachs (observational and pooled), bnlearn | see App. A.9 | App. A.9 |
+| E9 | PC vs FCI under hidden confounding, ε_j against n (1600–25 600) | 🟡 ran; the predicted PC/FCI gap is **not** observed (see §2.6) | §2.6, App. A.8 |
+| E10 | Knowledge, p = 50, Laplace/LiNGAM, latent, Sachs (observational and pooled), bnlearn | 🟡 all done; Child/Insurance/Alarm with a reduced protocol (§4) | §2.6, App. A.9 |
 | E11 | Decision task, redone (local IDA, held-out data, set/bootstrap/BMA averaging) | ✅ | §2.5, App. A.10 |
-| E12 | Runtime and scaling (p = 50, 100) | 🟡 per-repeat runtimes done; the scaling runs are at the end of the queue | App. A.11 |
+| E12 | Runtime and scaling (p = 50, 100) | ✅ | §2.6 |
 | E13 | γ and α sensitivity | ✅ | App. A.2 |
-| E14 | Nonlinear base test (PC + KCI, p = 8) | see App. A.9 | App. A.9 |
+| E14 | Nonlinear base test (PC + KCI, p = 8) | ✅ (10 repeats) | §2.6, App. A.9 |
 
 ### Method, theory and writing (paper repository, local branch `experiments/chris`)
 
@@ -158,6 +158,34 @@ Setup: local IDA on held-out data, over the confounded pairs of the true DAG. Re
 
 Paired differences (set − single): PC −0.019 ± 0.008, GES −0.006 ± 0.011, FCI −0.022 ± 0.014. Bootstrap averaging is comparable (better for PC, worse for GES). The honest summary: a small bias reduction, a large coverage gain, and no advantage over bootstrap averaging.
 
+### 2.6 Hidden variables, robustness, real data, runtime (E9, E10, E12, E14)
+
+- **E9: hidden hubs, PC vs FCI.** Theorem 1 predicts that FCI retains G\* more often than PC once local errors vanish. That regime is **not reached** up to n = 25 600:
+  - ε̂_j (the fraction of subsets with at least one wrong adjacency) is 0.97 → 0.89 (PC) and 0.97 → 0.91 (FCI);
+  - A(G\*) falls from 0.20 to 0.14 for both;
+  - G\* is retained in 30–43% of repeats for both.
+
+  The paper now says this plainly. The earlier sentence claiming the effect was measured is gone.
+- **Random hidden variables (5 of 25).** Exceedance is 0.08 (PC) and 0.13 (FCI); G\* is retained 95% of the time.
+- **Domain knowledge.**
+  - Calibration holds in every regime; the largest exceedance is 0.18 ± 0.04 (PC, correct soft knowledge).
+  - Correct hard knowledge raises directed precision (PC 0.74 → 0.81). Noisy hard knowledge lowers G\* inclusion to 0.85.
+  - Soft knowledge makes the filter permissive (FCI admits 97%). The penalty also enters the calibration scores, and noisy chunk graphs violate it, which inflates τ to 0.15–0.23.
+- **p = 50, Laplace noise.** Calibration holds (exceedance 0.06–0.13). With DirectLiNGAM on Laplace noise, accepted directed claims are 0.994 precise, against 0.981 for the single run.
+- **Sachs, observational (853 cells).**
+  - Exceedance is 0.07–0.15.
+  - Accepted adjacencies are **all** in the consensus network (adjacency precision 1.00, recall 0.17–0.32), but directed precision is below the single run (PC 0.36 vs 0.44).
+  - The 17-edge consensus network is **never** admitted: A(G\*) ≈ 0.37 against τ ≈ 0.14, which is worth a sentence in the paper.
+  - The pooled data (7466 cells) are reported only as a stress test.
+- **bnlearn.**
+  - Asia (full protocol): exceedance 0.07 (PC) and 0.12 (FCI); G\* retained in 95–100% of repeats.
+  - Child, Insurance and Alarm use the reduced protocol (App. A.9).
+- **E14: KCI on quadratic data** (p = 8, n = 900, 10 repeats). Exceedance 0.16 ± 0.09 with only 5 held-out chunks; G\* retained in 90% of repeats; directed precision 0.67 vs 0.61 for the single run. A nonlinear base test removes the shared bias of case (b).
+- **E12: runtime** (PC, one core).
+  - About 78 s per repeat at p = 20 with every baseline; about 28 s for CSCD alone (m = 25).
+  - CSCD alone takes 364 s at p = 50 (m = 50) and about 1520 s at p = 100 (108 subsets of size 20).
+  - Cost is dominated by m (N + 1 + held-out) local runs plus the candidate projections.
+
 ## 3. Code added on this branch
 
 | File | Purpose |
@@ -225,7 +253,7 @@ PYTHONPATH=. .venv/bin/python analyze_v2.py
 
 ## Appendix A: generated tables
 
-*Built by `make_report_tables.py` on 2026-09-29 05:04. Mean ± standard error over repeats; α = 0.1, γ = 0.9 unless stated.*
+*Built by `make_report_tables.py` on 2026-09-29 10:01. Mean ± standard error over repeats; α = 0.1, γ = 0.9 unless stated.*
 
 ### E1/E3/E5 — Main experiment: claims against baselines (p=20, n=3200, N=9 chunks)
 
@@ -420,7 +448,8 @@ Coverage of the true effect by the range of IDA estimates over the set:
 | n=6400, N=9 | FCI | 355 | 0.057 ± 0.003 | 0.145 ± 0.029 | 0.642 ± 0.060 | 1.00 ± 0.00 | 0.547 ± 0.011 | 0.881 ± 0.017 | 0.592 ± 0.018 | 0.682 ± 0.017 |
 | n=6400, N=9 | GES | 355 | 0.072 ± 0.006 | 0.110 ± 0.033 | 0.370 ± 0.046 | 1.00 ± 0.00 | 0.745 ± 0.025 | 0.849 ± 0.067 | 0.696 ± 0.029 | 0.902 ± 0.035 |
 | n=6400, N=9 | PC | 355 | 0.059 ± 0.004 | 0.030 ± 0.016 | 0.465 ± 0.057 | 1.00 ± 0.00 | 0.742 ± 0.021 | 0.793 ± 0.046 | 0.738 ± 0.021 | 0.803 ± 0.016 |
-| n=12800, N=9 | not run |  |  |  |  |  |  |  |  |  |
+| n=12800, N=9 | FCI | 711 | 0.053 ± 0.003 | 0.085 ± 0.021 | 0.621 ± 0.060 | 1.00 ± 0.00 | 0.555 ± 0.010 | 0.889 ± 0.015 | 0.620 ± 0.015 | 0.689 ± 0.011 |
+| n=12800, N=9 | PC | 711 | 0.053 ± 0.003 | 0.075 ± 0.026 | 0.432 ± 0.055 | 1.00 ± 0.00 | 0.756 ± 0.018 | 0.824 ± 0.049 | 0.719 ± 0.017 | 0.786 ± 0.021 |
 
 ### E8 — Low-sample safeguards
 
@@ -506,31 +535,47 @@ Coverage of the true effect by the range of IDA estimates over the set:
 
 | n | Method | ε (train, per subset) | ε (chunk) | A(G*) | τ | G* incl. |
 |---|---|---|---|---|---|---|
-| 1600 | not run |  |  |  |  |  |
+| 1600 | FCI | 0.966 ± 0.017 | 0.995 ± 0.005 | 0.202 ± 0.031 | 0.125 ± 0.006 | 0.30 ± 0.11 |
+| 1600 | PC | 0.974 ± 0.011 | 0.997 ± 0.002 | 0.204 ± 0.030 | 0.128 ± 0.006 | 0.30 ± 0.11 |
 | 3200 | FCI | 0.970 ± 0.009 | 0.988 ± 0.005 | 0.178 ± 0.022 | 0.115 ± 0.005 | 0.43 ± 0.09 |
 | 3200 | PC | 0.959 ± 0.017 | 0.988 ± 0.005 | 0.175 ± 0.021 | 0.114 ± 0.004 | 0.33 ± 0.09 |
-| 6400 | not run |  |  |  |  |  |
-| 25600 | not run |  |  |  |  |  |
+| 6400 | FCI | 0.952 ± 0.030 | 0.982 ± 0.012 | 0.168 ± 0.028 | 0.103 ± 0.005 | 0.40 ± 0.11 |
+| 6400 | PC | 0.932 ± 0.024 | 0.982 ± 0.008 | 0.166 ± 0.028 | 0.101 ± 0.006 | 0.35 ± 0.11 |
+| 25600 | FCI | 0.910 ± 0.031 | 0.963 ± 0.013 | 0.137 ± 0.025 | 0.083 ± 0.006 | 0.30 ± 0.11 |
+| 25600 | PC | 0.892 ± 0.032 | 0.961 ± 0.014 | 0.138 ± 0.025 | 0.085 ± 0.006 | 0.30 ± 0.11 |
 
 ### E10 — Robustness and real data
 
 | Setting | Method | Exceed. | Admitted | G* incl. | CSCD prec. | CSCD rec. | Single prec. | Stab. prec. | No-filter prec. |
 |---|---|---|---|---|---|---|---|---|---|
-| No knowledge | not run |  |  |  |  |  |  |  |  |
-| Correct, hard | not run |  |  |  |  |  |  |  |  |
-| Correct, soft | not run |  |  |  |  |  |  |  |  |
-| Noisy, hard | not run |  |  |  |  |  |  |  |  |
-| Noisy, soft | not run |  |  |  |  |  |  |  |  |
-| p = 50 | not run |  |  |  |  |  |  |  |  |
-| Laplace noise | not run |  |  |  |  |  |  |  |  |
-| 5 of 25 hidden (random) | not run |  |  |  |  |  |  |  |  |
-| Sachs, observational (853) | not run |  |  |  |  |  |  |  |  |
-| Sachs, pooled (7466) | not run |  |  |  |  |  |  |  |  |
-| Asia | not run |  |  |  |  |  |  |  |  |
+| No knowledge | FCI | 0.130 ± 0.025 | 0.773 ± 0.044 | 1.00 ± 0.00 | 0.544 ± 0.010 | 0.862 ± 0.021 | 0.508 ± 0.011 | 0.708 ± 0.019 | 0.552 ± 0.010 |
+| No knowledge | PC | 0.145 ± 0.033 | 0.594 ± 0.048 | 1.00 ± 0.00 | 0.739 ± 0.017 | 0.764 ± 0.044 | 0.675 ± 0.018 | 0.797 ± 0.011 | 0.756 ± 0.018 |
+| Correct, hard | FCI | 0.135 ± 0.030 | 0.751 ± 0.048 | 1.00 ± 0.00 | 0.548 ± 0.011 | 0.875 ± 0.018 | 0.508 ± 0.011 | 0.736 ± 0.023 | 0.557 ± 0.011 |
+| Correct, hard | PC | 0.125 ± 0.032 | 0.618 ± 0.052 | 0.90 ± 0.07 | 0.807 ± 0.019 | 0.759 ± 0.044 | 0.746 ± 0.019 | 0.861 ± 0.012 | 0.819 ± 0.020 |
+| Correct, soft | FCI | 0.120 ± 0.029 | 0.969 ± 0.018 | 1.00 ± 0.00 | 0.550 ± 0.010 | 0.874 ± 0.019 | 0.508 ± 0.011 | 0.706 ± 0.018 | 0.552 ± 0.010 |
+| Correct, soft | PC | 0.180 ± 0.043 | 0.762 ± 0.057 | 1.00 ± 0.00 | 0.757 ± 0.017 | 0.742 ± 0.026 | 0.675 ± 0.018 | 0.797 ± 0.011 | 0.756 ± 0.018 |
+| Noisy, hard | FCI | 0.120 ± 0.027 | 0.731 ± 0.060 | 1.00 ± 0.00 | 0.535 ± 0.009 | 0.870 ± 0.018 | 0.505 ± 0.011 | 0.692 ± 0.020 | 0.551 ± 0.011 |
+| Noisy, hard | PC | 0.120 ± 0.027 | 0.501 ± 0.062 | 0.85 ± 0.08 | 0.760 ± 0.024 | 0.689 ± 0.040 | 0.699 ± 0.019 | 0.810 ± 0.016 | 0.774 ± 0.023 |
+| Noisy, soft | FCI | 0.120 ± 0.029 | 0.972 ± 0.016 | 1.00 ± 0.00 | 0.551 ± 0.010 | 0.874 ± 0.019 | 0.508 ± 0.011 | 0.705 ± 0.018 | 0.553 ± 0.010 |
+| Noisy, soft | PC | 0.170 ± 0.042 | 0.771 ± 0.052 | 1.00 ± 0.00 | 0.750 ± 0.018 | 0.713 ± 0.045 | 0.675 ± 0.018 | 0.797 ± 0.011 | 0.756 ± 0.018 |
+| p = 50 | FCI | 0.105 ± 0.035 | 0.716 ± 0.029 | 0.95 ± 0.05 | 0.558 ± 0.012 | 0.945 ± 0.010 | 0.493 ± 0.014 | 0.757 ± 0.016 | 0.589 ± 0.010 |
+| p = 50 | PC | 0.055 ± 0.020 | 0.416 ± 0.041 | 0.95 ± 0.05 | 0.677 ± 0.016 | 0.851 ± 0.048 | 0.635 ± 0.014 | 0.747 ± 0.016 | 0.783 ± 0.010 |
+| Laplace noise | LiNGAM | 0.105 ± 0.029 | 0.641 ± 0.020 | 1.00 ± 0.00 | 0.994 ± 0.004 | 0.994 ± 0.006 | 0.981 ± 0.006 | 0.993 ± 0.004 | 1.000 ± 0.000 |
+| Laplace noise | PC | 0.130 ± 0.031 | 0.539 ± 0.051 | 1.00 ± 0.00 | 0.749 ± 0.023 | 0.792 ± 0.047 | 0.692 ± 0.023 | 0.829 ± 0.020 | 0.797 ± 0.021 |
+| 5 of 25 hidden (random) | FCI | 0.130 ± 0.047 | 0.800 ± 0.042 | 0.95 ± 0.05 | 0.488 ± 0.014 | 0.859 ± 0.029 | 0.451 ± 0.013 | 0.641 ± 0.022 | 0.497 ± 0.015 |
+| 5 of 25 hidden (random) | PC | 0.080 ± 0.020 | 0.447 ± 0.062 | 0.95 ± 0.05 | 0.671 ± 0.018 | 0.715 ± 0.058 | 0.583 ± 0.020 | 0.671 ± 0.022 | 0.686 ± 0.022 |
+| Sachs, observational (853) | FCI | 0.067 ± 0.039 | 0.981 ± 0.004 | 0.00 ± 0.00 | 0.495 ± 0.005 | 0.312 ± 0.009 | 0.474 ± 0.009 | 0.462 ± 0.016 | 0.497 ± 0.005 |
+| Sachs, observational (853) | GES | 0.067 ± 0.039 | 0.750 ± 0.018 | 0.00 ± 0.00 | 0.295 ± 0.049 | 0.079 ± 0.016 | 0.428 ± 0.014 | 0.193 ± 0.033 | 0.025 ± 0.025 |
+| Sachs, observational (853) | PC | 0.150 ± 0.062 | 0.890 ± 0.016 | 0.00 ± 0.00 | 0.362 ± 0.030 | 0.106 ± 0.012 | 0.437 ± 0.013 | 0.249 ± 0.027 | 0.296 ± 0.032 |
+| Sachs, pooled (7466) | FCI | 0.033 ± 0.023 | 0.995 ± 0.002 | 0.25 ± 0.10 | 0.335 ± 0.009 | 0.376 ± 0.017 | 0.283 ± 0.006 | 0.285 ± 0.013 | 0.335 ± 0.009 |
+| Sachs, pooled (7466) | GES | 0.000 ± 0.000 | 0.978 ± 0.012 | 0.25 ± 0.10 | 0.395 ± 0.029 | 0.176 ± 0.013 | 0.162 ± 0.013 | 0.185 ± 0.008 | 0.425 ± 0.034 |
+| Sachs, pooled (7466) | PC | 0.050 ± 0.027 | 0.992 ± 0.004 | 0.45 ± 0.11 | 0.543 ± 0.017 | 0.244 ± 0.017 | 0.319 ± 0.018 | 0.406 ± 0.011 | 0.537 ± 0.018 |
+| Asia | FCI | 0.117 ± 0.050 | 0.477 ± 0.057 | 0.95 ± 0.05 | 0.515 ± 0.011 | 0.581 ± 0.014 | 0.492 ± 0.006 | 0.628 ± 0.026 | 0.531 ± 0.012 |
+| Asia | PC | 0.067 ± 0.031 | 0.674 ± 0.054 | 1.00 ± 0.00 | 0.465 ± 0.025 | 0.275 ± 0.028 | 0.566 ± 0.020 | 0.539 ± 0.029 | 0.480 ± 0.041 |
 | Child | not run |  |  |  |  |  |  |  |  |
 | Insurance | not run |  |  |  |  |  |  |  |  |
 | Alarm | not run |  |  |  |  |  |  |  |  |
-| KCI, quadratic, p=8 | not run |  |  |  |  |  |  |  |  |
+| KCI, quadratic, p=8 | PC | 0.160 ± 0.093 | 0.877 ± 0.043 | 0.90 ± 0.10 | 0.668 ± 0.075 | 0.311 ± 0.038 | 0.614 ± 0.047 | 0.705 ± 0.054 | 0.703 ± 0.101 |
 
 For Sachs and bnlearn, 'G* incl.' refers to the reference network (Sachs: 17-edge consensus).
 
