@@ -94,6 +94,15 @@ EXPERIMENTS: Dict[str, Dict] = {
     **{f"bnlearn_{net}": _exp(["pc", "fci"], 20, cfg=dict(n=4000, n_subsets=40, independence_test="gsq"),
                               opts=dict(run_bayes=False, run_full_data_baselines=False, n_test_chunks=3), real=net)
        for net in ("asia", "child", "insurance", "alarm")},
+    # E10 (reduced): G-square PC/FCI on the larger discrete networks is slow
+    # (2-3 h per repeat with the full protocol), so fewer candidates,
+    # bootstraps and repeats, and no ablations.
+    **{f"bnlearn_light_{net}": _exp(["pc", "fci"], 10, cfg=dict(n=4000, n_subsets=20, independence_test="gsq",
+                                                              n_candidate_graphs=30, stability_n_bootstraps=10,
+                                                              candidate_alpha_grid=(0.01, 0.1)),
+                                    opts=dict(run_bayes=False, run_full_data_baselines=False, run_ablations=False,
+                                              n_test_chunks=3), real=net)
+       for net in ("child", "insurance", "alarm")},
     # E12: scaling.
     "scale_p50": _exp(["pc"], 5, cfg=dict(p=50, n_subsets=50), opts=LIGHT),
     "scale_p100": _exp(["pc"], 5, cfg=dict(p=100, n_subsets=100, subset_frac=0.2), opts=LIGHT),
