@@ -138,3 +138,64 @@ def make_scenario(
     true_graph = true_observed_graph(full_dag, cols)
     weights = W if (not latent and quad is None) else None
     return Scenario(data, test_data, full_dag, true_graph, weights, name)
+
+
+def _bn_structure(name: str) -> pd.DataFrame:
+    """0/1 adjacency of a bnlearn network (structure only), via pgmpy."""
+    from pgmpy.utils import get_example_model
+
+    model = get_example_model(name)
+    nodes = list(model.nodes())
+    A = pd.DataFrame(0, index=nodes, columns=nodes, dtype=int)
+    for u, v in model.edges():
+        A.loc[u, v] = 1
+    return A
+
+
+def make_semisynthetic(
+    name: str,
+    n: int,
+    n_test: int,
+    rng: np.random.Generator,
+) -> Scenario:
+    """Real network structure with nonlinear, non-Gaussian mechanisms.
+
+    The structure is a published bnlearn network (e.g. ``ecoli70``, a gene
+    regulatory network of E. coli with 46 genes).  Each edge acts through a
+    randomly chosen monotone function of the standardized parent -- identity,
+    tanh(2z), or the signed power sign(z)|z|^1.5 -- with weights as in the
+    linear simulations, and each node has Gaussian, Laplace or uniform noise
+    with a random scale in [0.5, 1.5].  Every variable is standardized as soon
+    as it is generated, on one draw that is split into the observed and the
+    held-out sample, so the two stay exchangeable.  Fisher-z tests are then
+    mildly misspecified: the mechanisms are monotone, so most dependences
+    remain visible to linear tests, but not all.
+    """
+    A = _bn_structure(name)
+    names = list(A.index)
+    B = A.values.astype(int)
+    p = B.shape[0]
+    W = random_weights(B, rng)
+    kind = rng.integers(0, 3, size=B.shape)
+    noise_kind = rng.integers(0, 3, size=p)
+    noise_scale = rng.uniform(0.5, 1.5, size=p)
+    N = n + n_test
+    X = np.zeros((N, p))
+    for j in topological_order(B):
+        signal = np.zeros(N)
+        for i in np.flatnonzero(B[:, j]):
+            z = X[:, i]
+            if kind[i, j] == 1:
+                z = np.tanh(2.0 * z)
+            elif kind[i, j] == 2:
+                z = np.sign(z) * np.abs(z) ** 1.5
+            z = (z - z.mean()) / max(z.std(), 1e-12)
+            signal += W[i, j] * z
+        e = _noise(("gaussian", "laplace", "uniform")[noise_kind[j]], N, rng) * noise_scale[j]
+        X[:, j] = signal + e
+        X[:, j] = (X[:, j] - X[:, j].mean()) / max(X[:, j].std(), 1e-12)
+    cols = [str(c) for c in names]
+    data = pd.DataFrame(X[:n], columns=cols)
+    test_data = pd.DataFrame(X[n:], columns=cols)
+    full_dag = pd.DataFrame(B, index=cols, columns=cols)
+    return Scenario(data, test_data, full_dag, full_dag.copy(), None, f"semi_{name}")

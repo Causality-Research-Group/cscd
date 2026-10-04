@@ -63,3 +63,6 @@ results/
 results_v2/*/rec_*.pkl
 results_v2/*/*.tmp
 results_v2/run.log
+results_v3/*/rec_*.pkl
+results_v3/*/*.tmp
+results_v3/run.log
