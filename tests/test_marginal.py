@@ -272,9 +272,14 @@ class TestHardConstraints(unittest.TestCase):
     def knowledge(self, forbidden=(), required=(), order=None):
         return DomainKnowledge(order=order or {}, forbidden_edges=set(forbidden), required_edges=set(required))
 
-    def test_forbidden_direction_removes_definite_edge(self):
+    def test_forbidden_direction_keeps_adjacency_of_definite_edge(self):
         g = marks_from_edges(["A", "B"], directed=[("A", "B")])
         out = apply_hard_domain_constraints(g, self.knowledge(forbidden=[("A", "B")]))
+        self.assertEqual((out.loc["B", "A"], out.loc["A", "B"]), (ARROW, ARROW))
+
+    def test_legacy_deletion_of_definite_edge(self):
+        g = marks_from_edges(["A", "B"], directed=[("A", "B")])
+        out = apply_hard_domain_constraints(g, self.knowledge(forbidden=[("A", "B")]), delete_forbidden_definite=True)
         self.assertEqual(out.loc["A", "B"], NO_EDGE)
 
     def test_forbidden_direction_orients_undirected_edge(self):

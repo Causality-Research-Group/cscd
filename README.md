@@ -10,7 +10,9 @@ python3.11 -m venv .venv
 ```
 
 `requirements.txt` pins the versions used for the paper. causal-learn must be
-at least 0.1.4: GES fails in 0.1.3.x.
+at least 0.1.4: GES fails in 0.1.3.x. The permutation-test detector uses DoWhy
+(`pip install dowhy==0.14`); DoWhy declares `scipy<=1.15.3`, but runs with the
+pinned scipy 1.17.1, which we keep so that all other results are unchanged.
 
 ## Tests
 
@@ -27,16 +29,22 @@ true marginal, the true graph scores exactly zero.
 ## Reproducing the paper
 
 ```bash
-./reproduce.sh                # all experiments, then all tables and figures
-./reproduce.sh main latent    # selected experiments only
-.venv/bin/python make_paper_artifacts.py --results_root results --paper_root ../..
+./reproduce.sh            # every experiment, then every table and figure
+./reproduce.sh tables     # tables and figures only, from existing records
 ```
 
-`reproduce.sh` lists every experiment and its settings. Results go to
-`results/<experiment>/summary.csv`, one row per repeat, base method and alpha.
-`make_paper_artifacts.py` writes the LaTeX tables to `../../tables/`, the
-figures to `../../figures/results/`, and every mean and standard error to
-`results/digest.csv`.
+Two resumable drivers hold the presets (`--list` prints them):
+`experiments_v2.py` (design sweeps, robustness, bnlearn) writes records to
+`results_v2/`, and `experiments_v3.py` (validity study, main experiment with
+candidate-family arms, multi-chain order MCMC and external detectors,
+detection scenarios, domain knowledge, alpha sweep, scalability,
+semi-synthetic ecoli70, Sachs with interventional validation) writes to
+`results_v3/`. Records hold raw objects (all local graphs, scores, candidates,
+baseline outputs), so every number is recomputed from them by `analyze_v2.py`
+and `analyze_v3.py`; `make_paper_tables_v2.py`, `make_tables_v3.py`,
+`make_figures_v2.py` and `make_figures_v3.py` write the paper's tables and
+figures. `diagnostics/knowledge_trace.py` reproduces the diagnosis of the hard
+domain-knowledge constraint.
 
 ## Code map
 
@@ -47,7 +55,11 @@ figures to `../../figures/results/`, and every mean and standard error to
 | `cscd/graph.py` | PC, GES, FCI and DirectLiNGAM wrappers returning endpoint marks |
 | `cscd/baselines.py` | Single run, stability selection, uncalibrated self-compatibility, bootstrap compatibility, conformal without subsets |
 | `cscd/bayes.py` | Order MCMC baseline |
-| `cscd/runner.py` | One repeat of the full pipeline and the experiment drivers |
+| `cscd/pipeline.py`, `cscd/pipeline_v3.py` | One repeat of the full pipeline, storing a record |
+| `cscd/detectors.py` | Faller et al.'s kappa_G, the permutation test of Eulig et al. (DoWhy), LOVO of Schkoda et al. |
+| `cscd/analysis_v3.py` | Claim types, matched-recall precision, inclusion diagnostics of Theorem 1, detection metrics |
+| `cscd/sachs.py` | Sachs interventional conditions as held-out validation |
+| `cscd/runner.py` | Drivers of the first experiments |
 | `cscd/metrics.py`, `cscd/decision.py` | Claim partition, precision and recall, decision task |
 
 ## Graph representation

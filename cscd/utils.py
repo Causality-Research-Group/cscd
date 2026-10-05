@@ -60,13 +60,21 @@ def forbids_edge(knowledge: "DomainKnowledge", parent: str, child: str) -> bool:
 def apply_hard_domain_constraints(
     marks: pd.DataFrame,
     knowledge: "DomainKnowledge",
+    delete_forbidden_definite: bool = False,
 ) -> pd.DataFrame:
     """Enforce hard knowledge on an endpoint-mark graph.
 
-    For a forbidden a -> b:
-      * a definite a -> b edge is removed;
-      * an edge that could still be a -> b (no arrowhead at a) gets an
-        arrowhead at a, so a -- b becomes a <- b and a o-> b becomes a <-> b.
+    A forbidden a -> b means that a is not an ancestor of b, so in any
+    ancestral graph the mark at a must be an arrowhead.  We therefore put an
+    arrowhead at a and keep the adjacency: a -- b becomes a <- b, a o-> b and
+    a -> b become a <-> b.  The knowledge constrains orientations, not
+    adjacencies, so a correct constraint never removes a true adjacency.
+
+    ``delete_forbidden_definite=True`` reproduces the original behaviour,
+    which deleted a definite a -> b edge.  That turns an orientation error of
+    the base algorithm into an adjacency error, and is what made correct hard
+    knowledge lower the inclusion of the true graph in the first experiments.
+
     A required a -> b is written as a definite a -> b edge.
     """
     from .mixed_graph import ARROW, TAIL, has_edge, is_directed, remove_edge, set_edge
@@ -78,7 +86,7 @@ def apply_hard_domain_constraints(
         for b in vars_:
             if a == b or not has_edge(marks, a, b) or not forbids_edge(knowledge, a, b):
                 continue
-            if is_directed(marks, a, b):
+            if delete_forbidden_definite and is_directed(marks, a, b):
                 remove_edge(marks, a, b)
             elif marks.loc[b, a] != ARROW:
                 marks.loc[b, a] = ARROW

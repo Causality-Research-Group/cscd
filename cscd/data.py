@@ -1,3 +1,4 @@
+import os
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -259,3 +260,20 @@ def sachs_reference_graph(var_names: List[str]) -> Optional[pd.DataFrame]:
             A.loc[a_name, b_name] = 1
             n_found += 1
     return A if n_found else None
+
+
+SACHS_OBS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                              "data_files", "sachs_observational.txt")
+
+
+def load_sachs_observational(path: str = SACHS_OBS_PATH) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
+    """The observational condition of Sachs et al. (2005): 853 cells, CD3/CD28 only.
+
+    Distributed by bnlearn (https://www.bnlearn.com/research/sachs05/).  Unlike
+    the pooled 7466-sample data, these samples come from one condition and
+    are plausibly i.i.d., as the conformal step assumes.  The measurements are
+    heavily right-skewed, so they are log-transformed.
+    """
+    df = pd.read_csv(path, sep="\t")
+    df = np.log(df.clip(lower=1e-3))
+    return df, sachs_reference_graph(list(df.columns))

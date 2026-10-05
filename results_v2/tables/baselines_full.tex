@@ -1,0 +1,53 @@
+\begin{tabular}{llccccc}
+\toprule
+Method & Estimator & Dir.\ prec. & Dir.\ rec. & Dir.\ AP & Adj.\ prec. & Adj.\ rec. \\
+\midrule
+PC & CSCD (ours) & $0.747$ & $0.804$ & $0.734$ & $0.983$ & $0.881$ \\
+ & Candidate pool, no filter & $0.765$ & $0.702$ & $0.794$ & $0.989$ & $0.765$ \\
+ & Uncalibrated self-comp. & $0.743$ & $0.762$ & $0.729$ & $0.976$ & $0.861$ \\
+ & Single run, $D_{\mathrm{train}}$ & $0.681$ & $0.876$ & -- & $0.925$ & $0.941$ \\
+ & Single run, $D$ & $0.710$ & $0.907$ & -- & -- & -- \\
+ & Stability sel.\ 0.6, $D_{\mathrm{train}}$ & $0.794$ & $0.796$ & -- & $0.980$ & $0.909$ \\
+ & Stability sel.\ 0.6, $D$ & $0.805$ & $0.799$ & -- & $0.983$ & $0.919$ \\
+ & Stability, MB bound $E[V]\le1$ & $0.986$ & $0.305$ & -- & -- & -- \\
+ & Bootstrap freq.\ $\ge\gamma$, $D_{\mathrm{train}}$ & $0.824$ & $0.613$ & $0.826$ & $0.991$ & $0.667$ \\
+ & Bootstrap freq.\ $\ge\gamma$, $D$ & $0.829$ & $0.638$ & $0.830$ & $1.000$ & $0.694$ \\
+ & Order MCMC, $D_{\mathrm{train}}$ & $0.803$ & $0.671$ & $0.721$ & $0.903$ & $0.983$ \\
+ & Order MCMC, $D$ & $0.804$ & $0.650$ & $0.728$ & $0.908$ & $0.978$ \\
+ & Bootstrap compat., median & $0.746$ & $0.798$ & -- & -- & -- \\
+ & Bootstrap compat., $(1-\alpha)$ q. & $0.763$ & $0.713$ & -- & -- & -- \\
+ & Conformal, no subsets & $0.754$ & $0.742$ & -- & -- & -- \\
+\addlinespace
+GES & CSCD (ours) & $0.705$ & $0.903$ & $0.686$ & $0.904$ & $0.970$ \\
+ & Candidate pool, no filter & $0.912$ & $0.702$ & $0.912$ & $0.973$ & $0.750$ \\
+ & Uncalibrated self-comp. & $0.726$ & $0.761$ & $0.710$ & $0.936$ & $0.954$ \\
+ & Single run, $D_{\mathrm{train}}$ & $0.695$ & $0.946$ & -- & $0.892$ & $0.997$ \\
+ & Single run, $D$ & $0.701$ & $0.952$ & -- & -- & -- \\
+ & Stability sel.\ 0.6, $D_{\mathrm{train}}$ & $0.811$ & $0.875$ & -- & $0.935$ & $0.966$ \\
+ & Stability sel.\ 0.6, $D$ & $0.805$ & $0.854$ & -- & $0.951$ & $0.982$ \\
+ & Stability, MB bound $E[V]\le1$ & $0.978$ & $0.544$ & -- & -- & -- \\
+ & Bootstrap freq.\ $\ge\gamma$, $D_{\mathrm{train}}$ & $0.945$ & $0.648$ & $0.906$ & $0.978$ & $0.676$ \\
+ & Bootstrap freq.\ $\ge\gamma$, $D$ & $0.944$ & $0.669$ & $0.909$ & $0.975$ & $0.697$ \\
+ & Order MCMC, $D_{\mathrm{train}}$ & $0.832$ & $0.674$ & $0.763$ & $0.919$ & $0.978$ \\
+ & Order MCMC, $D$ & $0.804$ & $0.636$ & $0.723$ & $0.904$ & $0.975$ \\
+ & Bootstrap compat., median & $0.850$ & $0.806$ & -- & -- & -- \\
+ & Bootstrap compat., $(1-\alpha)$ q. & $0.909$ & $0.704$ & -- & -- & -- \\
+ & Conformal, no subsets & $0.862$ & $0.801$ & -- & -- & -- \\
+\addlinespace
+FCI & CSCD (ours) & $0.550$ & $0.882$ & $0.629$ & $0.995$ & $0.901$ \\
+ & Candidate pool, no filter & $0.561$ & $0.887$ & $0.678$ & $0.995$ & $0.904$ \\
+ & Uncalibrated self-comp. & $0.540$ & $0.658$ & $0.539$ & $0.962$ & $0.877$ \\
+ & Single run, $D_{\mathrm{train}}$ & $0.511$ & $0.938$ & -- & $0.945$ & $0.943$ \\
+ & Single run, $D$ & $0.523$ & $0.941$ & -- & -- & -- \\
+ & Stability sel.\ 0.6, $D_{\mathrm{train}}$ & $0.716$ & $0.838$ & -- & $0.965$ & $0.934$ \\
+ & Stability sel.\ 0.6, $D$ & $0.771$ & $0.863$ & -- & $0.980$ & $0.947$ \\
+ & Stability, MB bound $E[V]\le1$ & $0.784$ & $0.695$ & -- & -- & -- \\
+ & Bootstrap freq.\ $\ge\gamma$, $D_{\mathrm{train}}$ & $0.608$ & $0.881$ & $0.721$ & $0.997$ & $0.913$ \\
+ & Bootstrap freq.\ $\ge\gamma$, $D$ & $0.613$ & $0.901$ & $0.757$ & $0.998$ & $0.919$ \\
+ & Order MCMC, $D_{\mathrm{train}}$ & $0.826$ & $0.661$ & $0.739$ & $0.911$ & $0.972$ \\
+ & Order MCMC, $D$ & $0.790$ & $0.648$ & $0.715$ & $0.898$ & $0.981$ \\
+ & Bootstrap compat., median & $0.535$ & $0.879$ & -- & -- & -- \\
+ & Bootstrap compat., $(1-\alpha)$ q. & $0.556$ & $0.888$ & -- & -- & -- \\
+ & Conformal, no subsets & $0.549$ & $0.880$ & -- & -- & -- \\
+\bottomrule
+\end{tabular}
