@@ -135,7 +135,9 @@ INCLUSION_SETS = [
     ("highdim_v3", R3, "$p{=}50$, $n{=}1000$"),
     ("quadratic_v3", R3, "quadratic"),
     ("n200_N9", R2, "$n{=}200$"),
+    ("n400_N9", R2, "$n{=}400$"),
     ("n800_N9", R2, "$n{=}800$"),
+    ("n1600_N9", R2, "$n{=}1600$"),
     ("n6400_N9", R2, "$n{=}6400$"),
     ("n12800_N9", R2, "$n{=}12800$"),
 ]
@@ -177,6 +179,7 @@ def sec_inclusion():
             eps_train=g.get("eps_train", pd.Series(dtype=float)).mean(),
             eps_train_max=g.get("eps_train", pd.Series(dtype=float)).max(),
             eps_chunk=g.get("eps_chunk", pd.Series(dtype=float)).mean(),
+            eps_chunk_max=g.get("eps_chunk", pd.Series(dtype=float)).max(),
             sum_eps_train=g.get("sum_eps_train", pd.Series(dtype=float)).mean(),
             union_bound=1 - g.get("sum_eps_train", pd.Series(dtype=float)).mean(),
             frac_sufficient=g.get("frac_sufficient", pd.Series(dtype=float)).mean(),

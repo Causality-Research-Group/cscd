@@ -92,6 +92,29 @@ def t_inclusion(out):
     write(out, "inclusion", "\n".join(lines) + "\n")
 
 
+def t_localerr(out):
+    inc = rd("inclusion")
+    if inc is None:
+        return
+    sets = ["valid_N9", "n200_N9", "n400_N9", "n800_N9", "n1600_N9", "n6400_N9", "n12800_N9", "hubs_v3"]
+    lines = [r"\begin{tabular}{llcccccc}", r"\toprule",
+             r"Setting & Method & Causally suff.\ subsets & $\hat\varepsilon$ (train) & max & $\hat\varepsilon$ (chunk) & $\sum_j\hat\varepsilon_j$ & $1-\sum_j\hat\varepsilon_j$ \\", r"\midrule"]
+    for e in sets:
+        d = inc[inc.experiment == e]
+        for j, m in enumerate(ORDER):
+            x = d[d.method == m]
+            if x.empty:
+                continue
+            x = x.iloc[0]
+            lab = x.label if j == 0 else ""
+            lines.append(" & ".join([lab, M[m], f(x.frac_sufficient), f(x.eps_train), f(x.eps_train_max), f(x.eps_chunk),
+                                     f(x.sum_eps_train, 1), f(x.union_bound, 1)]) + r" \\")
+        lines.append(r"\addlinespace")
+    lines[-1] = r"\bottomrule"
+    lines.append(r"\end{tabular}")
+    write(out, "localerr", "\n".join(lines) + "\n")
+
+
 def t_validity(out):
     val = rd("validity")
     if val is None:
@@ -111,9 +134,9 @@ def t_validity(out):
     write(out, "validity", "\n".join(lines) + "\n")
 
 
-DET_SHOW = [("CSCD margin $A(\\widehat G)-\\tau_\\alpha$", "CSCD"), ("Bootstrap compat.", "Boot.\\ compat."),
+DET_SHOW = [("CSCD margin $A(\\widehat G)-\\tau_\\alpha$", "CSCD"), ("Raw $A(\\widehat G)$", "Raw $A(\\widehat G)$"), ("Bootstrap compat.", "Boot.\\ compat."),
             ("Conformal, no subsets", "No subsets"), ("$\\kappa_G$ (Faller et al.)", "$\\kappa_G$"),
-            ("Permutation test (Eulig et al.)", "Perm.\\ test"), ("LOVO loss (Schkoda et al.)", "LOVO")]
+            ("Eulig violations (ratio)", "Perm.\\ test"), ("LOVO loss (Schkoda et al.)", "LOVO")]
 
 
 def t_detection(out):
@@ -380,14 +403,36 @@ def t_scale(out):
     write(out, "scale", "\n".join(lines) + "\n")
 
 
+def t_claims_compact(out):
+    c = rd("claims")
+    if c is None:
+        return
+    ests = [("CSCD", "CSCD (ours)"), ("Pool, no filter", "Pool, no filter"), ("Single run, $D$", "Single run"),
+            ("Stability sel., $D$", "Stability sel."), ("Bootstrap freq., $D$", "Bootstrap freq."), ("Order MCMC, $D$", "Order MCMC")]
+    lines = [r"\begin{tabular}{lcccccc}", r"\toprule",
+             r" & \multicolumn{3}{c}{PC} & \multicolumn{3}{c}{GES} \\ \cmidrule(lr){2-4}\cmidrule(lr){5-7}",
+             r"Estimator & Adj. & Orient. & P@R$.5$ & Adj. & Orient. & P@R$.5$ \\", r"\midrule"]
+    for key, lab in ests:
+        cells = []
+        for m in ("pc", "ges"):
+            a = c[(c.method == m) & (c.kind == "adj") & (c.estimator == key)]
+            o = c[(c.method == m) & (c.kind == "dir_def") & (c.estimator == key)]
+            cells.append(f(a.prec_mean.iloc[0]) if len(a) else "--")
+            cells.append(f"${o.prec_mean.iloc[0]:.2f}$/${o.rec_mean.iloc[0]:.2f}$" if len(o) else "--")
+            cells.append(f(o["p@r0.5_mean"].iloc[0]) if len(o) else "--")
+        lines.append(" & ".join([lab] + cells) + r" \\")
+    lines += [r"\bottomrule", r"\end{tabular}"]
+    write(out, "claims_compact", "\n".join(lines) + "\n")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--paper_root", default="../aistats2027")
     args = ap.parse_args()
     out = os.path.join(args.paper_root, "tables", "rev")
     os.makedirs(out, exist_ok=True)
-    for t in (t_calibration, t_inclusion, t_validity, t_detection, t_detection_ci, t_within, t_claims, t_arms,
-              t_alpha, t_knowledge, t_mcmc, t_decision, t_semi, t_sachs, t_scale):
+    for t in (t_calibration, t_inclusion, t_localerr, t_validity, t_detection, t_detection_ci, t_within, t_claims, t_arms,
+              t_claims_compact, t_alpha, t_knowledge, t_mcmc, t_decision, t_semi, t_sachs, t_scale):
         try:
             t(out)
         except Exception as exc:

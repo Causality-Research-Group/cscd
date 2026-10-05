@@ -28,7 +28,7 @@ plt.rcParams.update({
     "legend.fontsize": 6.8, "axes.edgecolor": INK2, "axes.labelcolor": INK, "xtick.color": INK2,
     "ytick.color": INK2, "axes.spines.top": False, "axes.spines.right": False, "axes.grid": True,
     "grid.color": GRID, "grid.linewidth": 0.6, "axes.axisbelow": True, "lines.linewidth": 1.5,
-    "pdf.fonttype": 42, "font.family": "serif",
+    "pdf.fonttype": 42, "font.family": "serif", "mathtext.fontset": "cm",
 })
 
 
@@ -63,8 +63,8 @@ def fig_inclusion(out):
         ax.set_xlabel(r"rank of $A(G^\ast)$")
         ax.set_ylim(0, 1)
         ax.grid(axis="x", visible=False)
-        ax.annotate(r"$\geq k_\alpha$: excluded", xy=(N, 0.93), xytext=(N - 0.2, 0.93), ha="right", va="center",
-                    fontsize=6.3, color=INK2)
+        ax.axvspan(N - 0.5, N + 0.5, color=GRID, zorder=0)
+        ax.text(N, 0.95, "excl.", ha="center", va="top", fontsize=6.3, color=INK2)
     axes[0].set_ylabel("fraction of repeats")
     axes[0].legend(frameon=False, loc="upper center", ncol=1, bbox_to_anchor=(0.62, 0.86))
     ax = axes[3]
@@ -74,14 +74,14 @@ def fig_inclusion(out):
             d = d.iloc[:100]
         ax.scatter(d.tau, d.a_star, s=9, marker=mk, facecolor="none", edgecolor={"main": C["pc"], "symmetric": C["other"], "hidden hubs": C["violet"]}[title],
                    linewidths=0.8, label=title)
-    lim = [0, max(0.3, float(np.nanmax(df[df.method == "pc"].a_star)) * 1.05)]
-    ax.plot(lim, lim, color=INK2, lw=0.9, ls="--")
-    ax.set_xlim(0, 0.2)
-    ax.set_ylim(lim)
+    ax.plot([0, 0.35], [0, 0.35], color=INK2, lw=0.9, ls="--")
+    ax.set_xlim(0, 0.28)
+    ax.set_ylim(0, 0.35)
+    ax.set_xticks([0, 0.1, 0.2])
     ax.set_xlabel(r"$\tau_{0.1}$")
     ax.set_ylabel(r"$A(G^\ast)$")
-    ax.set_title(r"PC: $G^\ast$ excluded above the line", color=INK)
-    ax.legend(frameon=False, loc="upper left", handletextpad=0.2)
+    ax.set_title(r"PC, per repeat", color=INK)
+    ax.legend(frameon=False, loc="lower right", handletextpad=0.2, borderaxespad=0.1)
     fig.tight_layout(pad=0.3, w_pad=0.6)
     fig.savefig(os.path.join(out, "inclusion.pdf"))
     plt.close(fig)
@@ -121,7 +121,7 @@ def fig_selective(out):
     if df is None:
         return
     dets = [("CSCD margin $A(\\widehat G)-\\tau_\\alpha$", "CSCD", C["pc"]), ("Bootstrap compat.", "Bootstrap compat.", C["ges"]),
-            ("$\\kappa_G$ (Faller et al.)", r"$\kappa_G$", C["fci"]), ("Permutation test (Eulig et al.)", "Permutation test", C["other"]),
+            ("$\\kappa_G$ (Faller et al.)", r"$\kappa_G$", C["fci"]), ("Eulig violations (ratio)", "Permutation test", C["other"]),
             ("LOVO loss (Schkoda et al.)", "LOVO", C["violet"])]
     fig, axes = plt.subplots(1, 3, figsize=(7.0, 1.85), sharey=False)
     for ax, m in zip(axes, ("pc", "ges", "fci")):

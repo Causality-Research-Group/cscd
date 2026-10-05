@@ -249,9 +249,31 @@ def inclusion_diagnostics(rec: Dict, alpha: float = 0.1) -> Dict[str, float]:
         out["eps_train"] = float(w.any(axis=1).mean())
         out["eps_chunk"] = float(np.nanmean(np.where(valid[:, ok_train], chunk_wrong[:, ok_train].any(axis=2), np.nan)))
         out["sum_eps_train"] = float(w.any(axis=1).sum())
+    elif rec.get("local_err_train") is not None:
+        # Records of the first runs store per-subset error indicators only.
+        lt = np.asarray(rec["local_err_train"], float)
+        out["eps_train"] = float(lt.mean())
+        out["sum_eps_train"] = float(lt.sum())
+        if rec.get("local_err_chunks"):
+            out["eps_chunk"] = float(np.mean(rec["local_err_chunks"]))
     if rec.get("subset_sufficient") is not None:
         out["frac_sufficient"] = float(np.mean(rec["subset_sufficient"]))
+    elif rec.get("true_graph") is not None and rec.get("subsets") is not None and rec.get("n_latent", 0) == 0:
+        out["frac_sufficient"] = _frac_sufficient(rec["true_graph"], rec["var_names"], rec["subsets"])
     return out
+
+
+def _frac_sufficient(dag: np.ndarray, names, subsets) -> float:
+    """Fraction of subsets whose true marginal MAG has no bidirected edge (DAG truth only)."""
+    import pandas as pd
+    from .mixed_graph import from_dag_adjacency, marginal_mag
+
+    marks = from_dag_adjacency(pd.DataFrame(dag.astype(int), index=names, columns=names))
+    ok = []
+    for S in subsets:
+        m = marginal_mag(marks, S).values
+        ok.append(not bool(((m == 2) & (m.T == 2)).any()))
+    return float(np.mean(ok))
 
 
 def eta_slack(u: Iterable[float]) -> float:
