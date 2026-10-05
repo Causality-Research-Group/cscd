@@ -516,15 +516,18 @@ def sec_selective():
     df = pd.DataFrame(pool)
     save(df, "selective_pool")
     dets = [c for c in df.columns if c not in ("experiment", "method", "repeat", "skel_err", "p", "skel_err_rate", "effect_err")]
+    common = ["CSCD margin $A(\\widehat G)-\\tau_\\alpha$", "Raw $A(\\widehat G)$", "Bootstrap compat.",
+              "$\\kappa_G$ (Faller et al.)", "Eulig violations (ratio)", "LOVO loss (Schkoda et al.)"]
     rows = []
     for m in ("pc", "ges", "fci"):
-        d = df[df.method == m]
+        # One pool of runs for which every compared detector is available.
+        d = df[df.method == m].dropna(subset=[c for c in common if c in df.columns])
         for det in dets:
             x = d[[det, "skel_err_rate"]].dropna()
             if len(x) < 10:
                 continue
-            for r in (0.1, 0.2, 0.3, 0.4, 0.5):
-                thr = np.quantile(x[det], 1 - r)
+            for r in (0.0, 0.1, 0.2, 0.3, 0.4, 0.5):
+                thr = np.quantile(x[det], 1 - r) if r > 0 else np.inf
                 keep = x[det] <= thr
                 rows.append(dict(method=m, detector=det, abstain=r, n=len(x), err_kept=x.skel_err_rate[keep].mean(),
                                  err_rejected=x.skel_err_rate[~keep].mean() if (~keep).any() else np.nan,

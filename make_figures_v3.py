@@ -121,9 +121,9 @@ def fig_selective(out):
     if df is None:
         return
     dets = [("CSCD margin $A(\\widehat G)-\\tau_\\alpha$", "CSCD", C["pc"]), ("Bootstrap compat.", "Bootstrap compat.", C["ges"]),
-            ("$\\kappa_G$ (Faller et al.)", r"$\kappa_G$", C["fci"]), ("Eulig violations (ratio)", "Permutation test", C["other"]),
+            ("Raw $A(\\widehat G)$", r"raw $A(\widehat G)$", INK2), ("$\\kappa_G$ (Faller et al.)", r"$\kappa_G$", C["fci"]), ("Eulig violations (ratio)", "Permutation test", C["other"]),
             ("LOVO loss (Schkoda et al.)", "LOVO", C["violet"])]
-    fig, axes = plt.subplots(1, 3, figsize=(7.0, 1.85), sharey=False)
+    fig, axes = plt.subplots(1, 3, figsize=(7.0, 2.05), sharey=False)
     for ax, m in zip(axes, ("pc", "ges", "fci")):
         d = df[df.method == m]
         if d.empty:
@@ -137,8 +137,9 @@ def fig_selective(out):
         ax.set_title(LABEL[m], color=INK)
         ax.set_xlabel("fraction of runs rejected")
     axes[0].set_ylabel("skeleton error of kept runs")
-    axes[0].legend(frameon=False, fontsize=6, loc="lower left")
-    fig.tight_layout(pad=0.3)
+    h, l = axes[0].get_legend_handles_labels()
+    fig.legend(h, l, frameon=False, ncol=len(l), loc="lower center", bbox_to_anchor=(0.5, -0.02))
+    fig.tight_layout(pad=0.3, rect=(0, 0.1, 1, 1))
     fig.savefig(os.path.join(out, "selective.pdf"))
     plt.close(fig)
 
@@ -162,6 +163,7 @@ def fig_knowledge(out):
         d = d.sort_values("r")
         axes[1].plot(d.r, d.auroc, marker="o", ms=3, color=C[m], label=LABEL[m])
     axes[0].set_ylabel(r"$G^\ast\in\mathcal{C}_\alpha$")
+    axes[0].set_ylim(0, 1.05)
     axes[1].set_ylabel(r"AUROC vs. no knowledge")
     axes[1].axhline(0.5, color=INK2, ls="--", lw=0.9)
     for ax in axes:
