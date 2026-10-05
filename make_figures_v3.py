@@ -174,13 +174,66 @@ def fig_knowledge(out):
     plt.close(fig)
 
 
+def fig_pr(out, kind="dir_def"):
+    """Pooled precision-recall curves of claim scores (main setting)."""
+    import analyze_v3 as A
+    from cscd.analysis_v3 import _pairs, standard_mask, truth_claims
+
+    curves = {m: {} for m in ("pc", "ges")}
+    points = {m: {} for m in ("pc", "ges")}
+    show = [("CSCD", "CSCD", C["pc"]), ("Pool, no filter", "pool", INK2), ("Bootstrap freq., $D$", "bootstrap freq.", C["ges"]),
+            ("Order MCMC, $D$", "order MCMC", C["violet"])]
+    pts = [("Single run, $D$", "single run", "s"), ("Stability sel., $D$", "stability sel.", "^")]
+    for rec in A.records("main_v3"):
+        m = rec["method"]
+        if m not in curves:
+            continue
+        T = truth_claims(rec["true_graph"], rec.get("true_skel"), kind)
+        est = A._estimators(rec, kind, standard_mask(rec["cand_tags"]))
+        for key, _, _ in show:
+            if est.get(key) is not None:
+                sc, t = _pairs(est[key], T, symmetric=False)
+                curves[m].setdefault(key, []).append((sc, t))
+        for key, _, _ in pts:
+            Cm = A._points(rec, kind)[key]
+            sc, t = _pairs(Cm.astype(float), T, symmetric=False)
+            points[m].setdefault(key, []).append((np.sum((sc > 0.5) & t), np.sum(sc > 0.5), np.sum(t)))
+    fig, axes = plt.subplots(1, 2, figsize=(5.0, 2.1), sharey=True)
+    for ax, m in zip(axes, ("pc", "ges")):
+        for key, lab, col in show:
+            if key not in curves[m]:
+                continue
+            sc = np.concatenate([a for a, _ in curves[m][key]])
+            t = np.concatenate([b for _, b in curves[m][key]])
+            thr = np.unique(sc[sc > 0])[::-1]
+            P = [np.mean(t[sc >= u]) for u in thr]
+            R = [np.sum(t[sc >= u]) / t.sum() for u in thr]
+            ax.plot(R, P, color=col, lw=1.4, label=lab)
+            acc = sc >= 0.9 - 1e-12
+            if acc.any():
+                ax.plot(np.sum(t[acc]) / t.sum(), np.mean(t[acc]), "o", color=col, ms=4)
+        for key, lab, mk in pts:
+            tp, n, npos = np.array(points[m][key]).sum(axis=0)
+            ax.plot(tp / npos, tp / max(n, 1), mk, color=INK, mfc="none", ms=5, label=lab)
+        ax.set_title(LABEL[m], color=INK)
+        ax.set_xlabel("recall")
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0.5, 1.01)
+    axes[0].set_ylabel("precision")
+    h, l = axes[0].get_legend_handles_labels()
+    fig.legend(h, l, frameon=False, ncol=3, loc="lower center", bbox_to_anchor=(0.5, -0.03))
+    fig.tight_layout(pad=0.3, rect=(0, 0.17, 1, 1))
+    fig.savefig(os.path.join(out, f"pr_{kind}.pdf"))
+    plt.close(fig)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--paper_root", default="../aistats2027")
     args = ap.parse_args()
     out = os.path.join(args.paper_root, "figures", "results_rev")
     os.makedirs(out, exist_ok=True)
-    for f in (fig_inclusion, fig_validity, fig_selective, fig_knowledge):
+    for f in (fig_inclusion, fig_validity, fig_selective, fig_knowledge, fig_pr):
         f(out)
         print("wrote", f.__name__)
 

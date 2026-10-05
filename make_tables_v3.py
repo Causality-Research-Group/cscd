@@ -54,20 +54,17 @@ def t_calibration(out):
     val, inc, alpha = rd("validity"), rd("inclusion"), rd("alpha")
     if val is None or inc is None:
         return
-    lines = [r"\begin{tabular}{lcccccccc}", r"\toprule",
-             r"Method & Exceedance & $\tau_{0.1}$ & $A(G^\ast)$ & Admitted & $G^\ast\in\mathcal{C}_\alpha$ & $\widehat G\in\mathcal{C}_\alpha$ & Rank $0$ & $1-\sum_j\hat\varepsilon_j$ \\",
+    g = lambda x, d=2: "--" if x is None or not np.isfinite(x) else f"${x:.{d}f}$".replace("$0.", "$.").replace("$-0.", "$-.")
+    lines = [r"\begin{tabular}{lccccccc}", r"\toprule",
+             r"Method & Exceedance & $\tau_{0.1}$ & $A(G^\ast)$ & Admitted & $G^\ast\in\mathcal{C}_\alpha$ & Rank $0$ & $1-{\textstyle\sum_j}\hat\varepsilon_j$ \\",
              r"\midrule"]
     for m in ORDER:
         v = _row(val, experiment="valid_N9", method=m, alpha=0.1)
         i = _row(inc, experiment="valid_N9", method=m)
-        im = _row(inc, experiment="main_v3", method=m)
         a = _row(alpha, experiment="main_v3", method=m, alpha=0.1) if alpha is not None else None
-        exc = f"${v.exceed:.3f}$ [${v.ci_lo:.3f}$, ${v.ci_hi:.3f}$]" if v is not None else "--"
-        lines.append(" & ".join([
-            M[m], exc, f(i.tau if i is not None else None, 3), f(i.a_star if i is not None else None, 3),
-            fse(a.admitted_mean, a.admitted_se) if a is not None else "--",
-            f(i.included if i is not None else None), f(1 - i.full_rank_ge_k if i is not None else None),
-            f(i.rank0 if i is not None else None), f(i.union_bound if i is not None else None, 1)]) + r" \\")
+        exc = (g(v.exceed, 3) + r"\,{\scriptsize[" + g(v.ci_lo, 3) + ", " + g(v.ci_hi, 3) + "]}") if v is not None else "--"
+        lines.append(" & ".join([M[m], exc, g(i.tau, 3), g(i.a_star, 3), g(a.admitted_mean) if a is not None else "--",
+                                 g(i.included), g(i.rank0), f"${i.union_bound:.0f}$"]) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}"]
     write(out, "calibration", "\n".join(lines) + "\n")
 
