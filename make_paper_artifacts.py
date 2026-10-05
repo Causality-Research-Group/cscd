@@ -375,7 +375,7 @@ def sweep_figure(
         ax.set_xticklabels([str(x) for x in xs])
         ax.set_xlabel(xlabel)
         ax.set_title(title)
-    axes[0].legend(frameon=False)
+    axes[-1].legend(frameon=False, loc="lower right")
     fig.tight_layout()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fig.savefig(path, bbox_inches="tight")
