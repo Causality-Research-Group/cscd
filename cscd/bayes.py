@@ -15,7 +15,7 @@ The output is a matrix of posterior edge probabilities P(a -> b | data).
 """
 
 import itertools
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -124,3 +124,70 @@ def bayesian_edge_posterior(
 ) -> pd.DataFrame:
     sampler = OrderMCMC(data, max_parents=max_parents, max_candidates=max_candidates)
     return sampler.edge_posterior(rng, n_iterations=n_iterations, burn_in=n_iterations // 4)
+
+
+def _split_rhat(chains: np.ndarray) -> float:
+    """Split-R-hat (Gelman et al., 2013) of scalar traces, shape (n_chains, n_draws)."""
+    n = chains.shape[1] // 2
+    if n < 2:
+        return float("nan")
+    halves = np.concatenate([chains[:, :n], chains[:, n:2 * n]], axis=0)
+    W = halves.var(axis=1, ddof=1).mean()
+    B = n * halves.mean(axis=1).var(ddof=1)
+    if W <= 0:
+        return 1.0 if B <= 0 else float("inf")
+    var_plus = (n - 1) / n * W + B / n
+    return float(np.sqrt(var_plus / W))
+
+
+def multi_chain_order_mcmc(
+    data: pd.DataFrame,
+    rng: np.random.Generator,
+    n_chains: int = 4,
+    n_iterations: int = 10000,
+    burn_in: Optional[int] = None,
+    thin: int = 25,
+    max_parents: int = 3,
+    max_candidates: int = 10,
+) -> dict:
+    """Order MCMC with several independent chains and convergence diagnostics.
+
+    Each chain starts from an independent random order.  Returns the pooled
+    edge posterior, the per-chain edge posteriors, the split-R-hat of the
+    order log-score traces, the largest absolute difference of an edge
+    marginal between any two chains, and the pooled DAG samples
+    (``n_chains * (n_iterations - burn_in) / thin`` of them).
+    """
+    if burn_in is None:
+        burn_in = n_iterations // 4
+    sampler = OrderMCMC(data, max_parents=max_parents, max_candidates=max_candidates)
+    p = sampler.p
+    traces, per_chain, samples = [], [], []
+    for _ in range(n_chains):
+        order = list(rng.permutation(p))
+        current = sampler.order_log_score(order)
+        trace, dags = [], []
+        for it in range(n_iterations):
+            i, j = rng.choice(p, size=2, replace=False)
+            proposal = order.copy()
+            proposal[i], proposal[j] = proposal[j], proposal[i]
+            proposed = sampler.order_log_score(proposal)
+            if np.log(rng.random()) < proposed - current:
+                order, current = proposal, proposed
+            if it >= burn_in and (it - burn_in) % thin == 0:
+                trace.append(current)
+                dags.append(sampler.sample_dag(order, rng))
+        traces.append(trace)
+        dags = np.stack(dags).astype(np.int8)
+        per_chain.append(dags.mean(axis=0))
+        samples.append(dags)
+    per_chain = np.stack(per_chain)
+    diffs = [np.abs(per_chain[a] - per_chain[b]).max() for a in range(n_chains) for b in range(a + 1, n_chains)]
+    return {
+        "posterior": per_chain.mean(axis=0),
+        "per_chain": per_chain,
+        "rhat_logscore": _split_rhat(np.array(traces)),
+        "max_edge_diff": float(max(diffs)) if diffs else 0.0,
+        "samples": np.concatenate(samples, axis=0),
+        "names": sampler.names,
+    }

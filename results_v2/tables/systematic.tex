@@ -1,0 +1,23 @@
+\begin{tabular}{llcccccc}
+\toprule
+ & & & \multicolumn{2}{c}{Reject $\widehat G$} & \multicolumn{2}{c}{AUROC} & \\ \cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Scenario & Method & Skel.\ err. & CSCD & Boot. & CSCD & Boot. & $G^\ast\in\mathcal{C}_\alpha$ \\
+\midrule
+Control & PC & $2.8$ & $0.07$ & $0.00$ & -- & -- & $1.00$ \\
+ & GES & $3.0$ & $0.17$ & $0.00$ & -- & -- & $1.00$ \\
+ & FCI & $2.3$ & $0.03$ & $0.00$ & -- & -- & $1.00$ \\
+\addlinespace
+Hidden hubs & PC & $36.0$ & $0.90$ & $0.00$ & $0.95$ & $0.61$ & $0.33$ \\
+ & GES & $33.7$ & $0.87$ & $0.00$ & $0.91$ & $0.13$ & $0.97$ \\
+ & FCI & $36.6$ & $0.33$ & $0.00$ & $0.64$ & $0.55$ & $0.43$ \\
+\addlinespace
+$p{=}50$, $n{=}1000$ & PC & $7.5$ & $0.15$ & $0.00$ & $0.65$ & $0.94$ & $0.95$ \\
+ & GES & $22.6$ & $0.90$ & $0.00$ & $0.94$ & $0.37$ & $1.00$ \\
+\addlinespace
+Wrong knowledge & PC & $4.5$ & $0.20$ & $0.00$ & $0.69$ & $0.49$ & $0.77$ \\
+ & FCI & $2.9$ & $0.10$ & $0.00$ & $0.64$ & $0.44$ & $1.00$ \\
+\addlinespace
+Quadratic (shared) & PC & $14.1$ & $0.00$ & $0.00$ & $0.22$ & $0.07$ & $0.30$ \\
+ & FCI & $14.5$ & $0.00$ & $0.00$ & $0.02$ & $0.06$ & $0.20$ \\
+\bottomrule
+\end{tabular}
