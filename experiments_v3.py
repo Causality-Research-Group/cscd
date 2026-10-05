@@ -80,7 +80,9 @@ EXPERIMENTS: Dict[str, Dict] = {
                                               stability_n_bootstraps=20),
                           opts=dict(subset_mode="mb", n_boot_baseline=20, **LIGHT)),
     # R8: semi-synthetic benchmark and Sachs with interventional validation.
-    "semi_ecoli70": _exp(["pc", "ges"], 20, cfg=dict(n_subsets=40), opts=dict(run_bayes=True, mcmc_iterations=20000, **LIGHT),
+    # PC only: one full-variable GES run on these 46 variables takes more than
+    # 10 minutes, and a repeat needs about 100 of them (candidates, bootstraps).
+    "semi_ecoli70": _exp(["pc"], 20, cfg=dict(n_subsets=40), opts=dict(run_bayes=True, mcmc_iterations=20000, **LIGHT),
                          data=dict(scenario="semi", network="ecoli70")),
     "sachs_obs_v3": _exp(PCGESFCI, 20, cfg=dict(n_subsets=15), opts=dict(n_test_chunks=3, run_bayes=True, mcmc_iterations=20000, **LIGHT),
                          real="sachs_obs"),
@@ -172,7 +174,8 @@ def main() -> None:
     for name in args.experiments:
         spec = EXPERIMENTS[name]
         R = args.repeats or spec["repeats"]
-        tasks += [(name, r, m) for r in range(R) for m in spec["methods"]]
+        caps = spec.get("repeats_by_method", {})
+        tasks += [(name, r, m) for r in range(R) for m in spec["methods"] if r < caps.get(m, R)]
     print(f"{len(tasks)} tasks", flush=True)
     with ProcessPoolExecutor(max_workers=args.workers) as ex:
         futs = [ex.submit(_safe, t) for t in tasks]
