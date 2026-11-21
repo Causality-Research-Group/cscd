@@ -29,7 +29,9 @@ from cscd.pipeline_v3 import OptionsV3, fit_repeat_v3
 from cscd.scenarios import make_scenario, make_semisynthetic
 from cscd.utils import corrupt_knowledge, knowledge_from_true_graph, make_domain_knowledge
 
-ROOT = "results_v3"
+# Read from the environment so that worker processes, which re-import this
+# module, write to the same place as the parent.
+ROOT = os.environ.get("CSCD_RESULTS_ROOT", "results_v3")
 
 BASE_CFG = dict(n=3200, p=20, n_subsets=25, subset_frac=0.5, n_candidate_graphs=100,
                 stability_n_bootstraps=50, random_seed=2027)

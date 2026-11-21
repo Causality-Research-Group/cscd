@@ -1,0 +1,7 @@
+version,method,repeats,cover single,bias single,cover cscd_set,bias cscd_set,cover pool,bias pool,cover bootstrap_avg,bias bootstrap_avg,cover bma,bias bma,CSCD abstains,CSCD set / pool size
+submitted (bug),fci,30,0.56,0.322,0.83,0.302,0.76,0.309,0.78,0.319,0.47,0.309,,
+submitted (bug),ges,30,0.26,0.293,0.82,0.248,0.80,0.312,0.62,0.326,0.39,0.314,,
+submitted (bug),pc,30,0.23,0.427,0.78,0.372,0.83,0.392,0.70,0.373,0.43,0.367,,
+corrected,fci,30,0.54,0.323,0.72,0.311,0.74,0.312,0.77,0.319,0.44,0.322,0.00,83 / 101
+corrected,ges,30,0.26,0.281,0.58,0.266,0.73,0.304,0.62,0.317,0.40,0.312,0.03,39 / 101
+corrected,pc,30,0.21,0.412,0.61,0.381,0.74,0.376,0.66,0.358,0.41,0.340,0.03,58 / 101

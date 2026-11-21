@@ -137,6 +137,21 @@ def mec_key(marks: pd.DataFrame, names: List[str]) -> bytes:
     return adj.tobytes() + np.packbits(coll).tobytes()
 
 
+def mec_key_pag(marks: pd.DataFrame, names: List[str]) -> bytes:
+    """Exact key of the Markov equivalence class of a candidate: its PAG over V.
+
+    Two MAGs are Markov equivalent if and only if they have the same PAG, so
+    this key is exact for every candidate, including FCI outputs with
+    bidirected edges, where ``mec_key`` can merge classes that differ only in
+    a collider on a discriminating path.  For DAG-like candidates the two keys
+    induce the same partition.
+    """
+    from .mixed_graph import marginal_pag
+
+    pag = marginal_pag(marks, names).loc[names, names].values.astype(np.int8)
+    return pag.tobytes()
+
+
 # ---------------------------------------------------------------------------
 # Candidate pool
 # ---------------------------------------------------------------------------
@@ -473,8 +488,16 @@ def fit_repeat_v3(
 
         t = time.perf_counter()
         tau = conformal_threshold(cal, 0.1)
-        admitted = [G for G, s, tg in zip(cands, cand_scores, tags) if s <= tau and tg != "truth"]
-        std = [G for G, tg in zip(cands, tags) if tg in ("full", "grid", "boot", "edit")]
+        from .analysis_v3 import standard_mask
+
+        # The CSCD set and "pool" must both come from the paper's standard family
+        # (the same 101 graphs used for the claims), so that the CSCD set is a
+        # subset of the pool.  Before this fix the CSCD set was filtered from
+        # every scored candidate, including the candidate-family arms, and the
+        # pool took every graph tagged full/grid/boot/edit (207 in arms mode).
+        in_family = standard_mask(tags, config.n_candidate_graphs)
+        admitted = [G for G, s, f in zip(cands, cand_scores, in_family) if f and s <= tau]
+        std = [G for G, f in zip(cands, in_family) if f]
         sets = {"single": [cands[0]], "cscd_set": admitted, "pool": std,
                 "bootstrap_avg": boot if not opts.score_only else []}
         if mcmc is not None:
@@ -483,6 +506,11 @@ def fit_repeat_v3(
         try:
             rec["decision"] = decision_task_v2(test_data, weights, names, true_graph.loc[names, names], sets,
                                                np.random.default_rng(rng_seed + 7919), n_pairs=opts.decision_n_pairs)
+            # An empty CSCD set yields NaN for its bias and coverage.  Keep its
+            # size so that the analysis can count such repeats as abstentions
+            # (no coverage) instead of silently dropping them.
+            rec["decision"]["dec2_size_cscd_set"] = len(admitted)
+            rec["decision"]["dec2_size_pool"] = len(std)
         except Exception as exc:
             logger.warning("Decision task failed (%s).", exc)
         times["decision"] = time.perf_counter() - t

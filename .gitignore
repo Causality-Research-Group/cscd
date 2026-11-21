@@ -66,3 +66,8 @@ results_v2/run.log
 results_v3/*/rec_*.pkl
 results_v3/*/*.tmp
 results_v3/run.log
+
+# rebuttal reruns (raw records)
+results_v3_rebuttal/*/rec_*.pkl
+results_v3_rebuttal/*/*.tmp
+results_v3_rebuttal/*.log
