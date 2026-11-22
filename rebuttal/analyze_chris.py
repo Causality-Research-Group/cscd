@@ -427,7 +427,34 @@ def sec_nscand():
                 "(pairs adjacent in the candidate, non-adjacent in the true marginal over V); miss = missing adjacencies.")
 
 
-SECTIONS = dict(nscand=sec_nscand, nosub=sec_nosub, trainfrac=sec_trainfrac, nscale=sec_nscale, kscope=sec_kscope,
+def sec_sinks():
+    """Hidden hubs (results_v3/hubs_v3) against its paired control (same DAG, sinks hidden)."""
+    H = pd.DataFrame(_det_rows("hubs_v3", R3))
+    S = pd.DataFrame(_det_rows("sinks_v3"))
+    M = pd.DataFrame(_det_rows("main_v3", R3))
+    rows = []
+    for m in ("pc", "ges", "fci"):
+        h, s_ = H[H.method == m], S[S.method == m]
+        mm = M[M.method == m]
+        if s_.empty:
+            continue
+        hp = h[h.repeat.isin(s_.repeat)]
+        for label, d in (("hidden hubs (paper)", hp), ("hidden sinks (paired control)", s_), ("main setting (paper's control)", mm)):
+            rows.append(dict(method=m, setting=label, runs=len(d), ghat_skel_err=d.ghat_skel_err.mean(),
+                             cscd_flag=rate_ci(d.ghat_flag.values),
+                             boot_flag=rate_ci(d.boot_flag.values) if "boot_flag" in d else "",
+                             gstar=d.gstar.mean(), admitted=d.admitted.mean(), exceed=d.exceed.mean()))
+        rows.append(dict(method=m, setting="AUROC hubs vs sinks: CSCD margin / bootstrap",
+                         runs=len(s_), ghat_skel_err=np.nan,
+                         cscd_flag=f"{auroc(hp.margin.values, s_.margin.values):.2f}",
+                         boot_flag=f"{auroc(hp.boot_own.values, s_.boot_own.values):.2f}",
+                         gstar=np.nan, admitted=np.nan, exceed=np.nan))
+    return save(pd.DataFrame(rows), "sinks", note="hubs_v3: p=26, degree 3, 6 largest-out-degree variables hidden. "
+                "sinks_v3: the same DAGs and data seeds, 6 sinks hidden (no hidden confounding, same density, "
+                "20 observed variables). Flags with each rule's own threshold (Wilson 95%).")
+
+
+SECTIONS = dict(sinks=sec_sinks, nscand=sec_nscand, nosub=sec_nosub, trainfrac=sec_trainfrac, nscale=sec_nscale, kscope=sec_kscope,
                 hubdose=sec_hubdose, hubdose2=lambda: sec_hubdose("hubdose2", "2"), lam=sec_lam, gamma=sec_gamma)
 
 if __name__ == "__main__":

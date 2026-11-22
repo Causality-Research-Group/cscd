@@ -111,6 +111,12 @@ for h in (0, 2, 4, 6):
     EXPERIMENTS[f"hubdose2_h{h}"] = _exp(["pc", "fci"], 20, cfg=dict(p=26, expected_degree=2.0),
                                          data=dict(n_latent=h, latent_mode="hubs"), opts=dict(run_ablations=True))
 
+# Paired control of results_v3/hubs_v3: same seeds, DAG, density and number of
+# observed variables (20 of 26), but the 6 hidden variables are sinks, so there
+# is no hidden confounding.  Options as hubs_v3 without the external detectors.
+EXPERIMENTS["sinks_v3"] = _exp(PCGESFCI, 30, cfg=dict(HUBS_CFG), data=dict(n_latent=6, latent_mode="sinks"),
+                               opts=dict(run_ablations=True))
+
 
 def _offset(method: str) -> int:
     return sum(ord(c) * (i + 1) for i, c in enumerate(method)) % 100_000

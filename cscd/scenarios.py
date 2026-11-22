@@ -91,6 +91,12 @@ def _hide(B: np.ndarray, n_latent: int, mode: str, rng: np.random.Generator):
         # Hidden common causes: the variables with the most children.
         out_degree = B.sum(axis=1) + rng.uniform(0, 0.1, size=p)
         return list(np.argsort(-out_degree)[:n_latent])
+    if mode == "sinks":
+        # Control for "hubs" (rebuttal): the variables with the fewest children.
+        # Hiding a sink creates no hidden common cause.  The same random draw as
+        # "hubs" is consumed, so a seed gives the same DAG and data in both modes.
+        out_degree = B.sum(axis=1) + rng.uniform(0, 0.1, size=p)
+        return list(np.argsort(out_degree)[:n_latent])
     return list(rng.choice(np.arange(p), size=n_latent, replace=False))
 
 
