@@ -71,3 +71,8 @@ results_v3/run.log
 results_v3_rebuttal/*/rec_*.pkl
 results_v3_rebuttal/*/*.tmp
 results_v3_rebuttal/*.log
+
+# rebuttal wave 2 (branch rebuttal/experiments-chris), raw records
+results_v3_chris/*/rec_*.pkl
+results_v3_chris/*/*.tmp
+results_v3_chris/*.log
