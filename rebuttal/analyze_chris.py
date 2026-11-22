@@ -161,14 +161,23 @@ def sec_trainfrac():
 
 def sec_nscale():
     rows = []
-    for scen in ("lin", "hubs"):
-        for n in (400, 800, 1600, 3200, 6400, 12800, 25600):
-            for rec in records(f"nscale_{scen}_n{n}"):
+    exps = [(f"nscale_{sc}_n{n}", sc, n, "0.05") for sc in ("lin", "hubs")
+            for n in (400, 800, 1600, 3200, 6400, 12800, 25600)]
+    exps += [(f"nscalea_{sc}_n{n}", sc, n, "0.05*1600/n") for sc in ("lin", "hubs") for n in (6400, 25600, 102400)]
+    for exp, scen, n, alevel in exps:
+        if True:
+            for rec in records(exp):
                 d = inclusion_diagnostics(rec, ALPHA)
                 cal = np.asarray(rec["cal_scores"]["skeleton"])
                 tau = d["tau"]
                 cs = np.asarray(rec["cand_scores"]["skeleton"])
-                rows.append(dict(scenario=scen, n=n, method=rec["method"], repeat=rec["repeat"],
+                T = rec["truth_proj"].astype(bool)
+                L = rec["local_train"]
+                iu = np.triu_indices(T.shape[1], 1)
+                ok = L[:, 0, 0] != -1
+                Lk, Tk = (L[ok][:, iu[0], iu[1]] != 0), T[ok][:, iu[0], iu[1]]
+                rows.append(dict(scenario=scen, n=n, test_alpha=alevel, method=rec["method"], repeat=rec["repeat"],
+                                 extra_slot=float(np.mean(Lk & ~Tk)), missing_slot=float(np.mean(~Lk & Tk)),
                                  tau=tau, tau_zero=float(tau == 0), a_gstar=d["a_star"],
                                  a_gstar_zero=float(d["a_star"] == 0), gstar=d["included"],
                                  exceed=float(np.mean(np.asarray(rec["test_scores"]["skeleton"]) > tau)),
@@ -180,12 +189,12 @@ def sec_nscale():
     df = pd.DataFrame(rows)
     os.makedirs(OUT, exist_ok=True)
     df.to_csv(os.path.join(OUT, "nscale_per_run.csv"), index=False)
-    g = df.groupby(["scenario", "method", "n"])
-    summ = g[["eps_train", "eps_chunk", "frac_wrong_pairs", "a_gstar_zero", "tau_zero", "gstar", "delta",
+    g = df.groupby(["scenario", "test_alpha", "method", "n"])
+    summ = g[["eps_train", "eps_chunk", "frac_wrong_pairs", "extra_slot", "missing_slot", "a_gstar_zero", "tau_zero", "gstar", "delta",
               "exceed", "ghat_flag", "ghat_skel_err", "frac_sufficient"]].mean().reset_index()
-    summ.insert(3, "runs", g.size().values)
-    summ["gstar_wilson"] = [rate_ci(df[(df.scenario == s) & (df.method == m) & (df.n == n)].gstar.values)
-                            for s, m, n in zip(summ.scenario, summ.method, summ.n)]
+    summ.insert(4, "runs", g.size().values)
+    summ["gstar_wilson"] = [rate_ci(df[(df.scenario == s) & (df.test_alpha == a) & (df.method == m) & (df.n == n)].gstar.values)
+                            for s, a, m, n in zip(summ.scenario, summ.test_alpha, summ.method, summ.n)]
     return save(summ, "nscale", note="Score-only runs, N=9, alpha=0.1, 50/50 split. lin: p=20 linear Gaussian, "
                 "no hidden variables; hubs: p=26, the 6 largest-out-degree variables hidden. eps_train: fraction of "
                 "training subset graphs with any skeleton error vs the true marginal; frac_wrong_pairs: fraction of "
@@ -255,11 +264,13 @@ def sec_kscope():
 # Rfqt-W3 / Kmr8-W2: dose-response in hidden hubs
 # ---------------------------------------------------------------------------
 
-def sec_hubdose():
-    exps = [f"hubdose_h{h}" for h in (0, 1, 2, 3, 4, 6)]
+def sec_hubdose(prefix="hubdose", deg="3"):
+    exps = [f"{prefix}_h{h}" for h in (0, 1, 2, 3, 4, 6)]
     df = pd.DataFrame([r for e in exps for r in _det_rows(e)])
-    df.to_csv(os.path.join(OUT, "hubdose_per_run.csv"), index=False)
-    ctrl = df[df.experiment == "hubdose_h0"]
+    if df.empty:
+        return df
+    df.to_csv(os.path.join(OUT, f"{prefix}_per_run.csv"), index=False)
+    ctrl = df[df.experiment == f"{prefix}_h0"]
     rows = []
     for e in exps:
         for m in ("pc", "ges", "fci"):
@@ -270,12 +281,12 @@ def sec_hubdose():
                              ghat_skel_err=s.ghat_skel_err.mean(), cscd_flag=rate_ci(s.ghat_flag.values),
                              boot_flag=rate_ci(s.boot_flag.values) if "boot_flag" in s else "",
                              uncal_flag=rate_ci(s.uncal_flag.values) if "uncal_flag" in s else "",
-                             cscd_auroc_vs_h0=auroc(s.margin.values, c.margin.values) if e != "hubdose_h0" else np.nan,
-                             boot_auroc_vs_h0=auroc(s.boot_own.values, c.boot_own.values) if e != "hubdose_h0" else np.nan,
+                             cscd_auroc_vs_h0=auroc(s.margin.values, c.margin.values) if not e.endswith("_h0") else np.nan,
+                             boot_auroc_vs_h0=auroc(s.boot_own.values, c.boot_own.values) if not e.endswith("_h0") else np.nan,
                              gstar=s.gstar.mean(), admitted=s.admitted.mean(), exceed=s.exceed.mean(),
                              adj_prec=s.adj_prec.mean(), single_adj_prec=s.single_adj_prec.mean()))
-    out = save(pd.DataFrame(rows), "hubdose",
-               note="p=26, expected degree 3, the h variables of largest out-degree hidden, n=3200, N=9. "
+    out = save(pd.DataFrame(rows), prefix,
+               note=f"p=26, expected degree {deg}, the h variables of largest out-degree hidden, n=3200, N=9. "
                     "Flags use each rule's own threshold (Wilson 95%), no control sample.")
     # Gating across the pooled hub-dose runs: skeleton error of kept vs flagged runs.
     g = []
@@ -290,7 +301,7 @@ def sec_hubdose():
                           skel_err_all=s.ghat_skel_err.mean(), skel_err_kept=kept.ghat_skel_err.mean(),
                           skel_err_flagged=fl.ghat_skel_err.mean() if len(fl) else np.nan,
                           reduction=1 - kept.ghat_skel_err.mean() / s.ghat_skel_err.mean()))
-    save(pd.DataFrame(g), "hubdose_gating", note="Pooled over 0-6 hidden hubs (skeleton errors in pairs).")
+    save(pd.DataFrame(g), f"{prefix}_gating", note="Pooled over 0-6 hidden hubs (skeleton errors in pairs).")
     return out
 
 
@@ -417,7 +428,7 @@ def sec_nscand():
 
 
 SECTIONS = dict(nscand=sec_nscand, nosub=sec_nosub, trainfrac=sec_trainfrac, nscale=sec_nscale, kscope=sec_kscope,
-                hubdose=sec_hubdose, lam=sec_lam, gamma=sec_gamma)
+                hubdose=sec_hubdose, hubdose2=lambda: sec_hubdose("hubdose2", "2"), lam=sec_lam, gamma=sec_gamma)
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)

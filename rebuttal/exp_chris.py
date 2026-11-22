@@ -71,6 +71,16 @@ for n in (400, 800, 1600, 3200, 6400, 12800, 25600):
     EXPERIMENTS[f"nscale_hubs_n{n}"] = _exp(["pc", "fci"], 30, cfg=dict(n=n, **HUBS_CFG), data=HUBS,
                                              opts=dict(score_only=True, n_test_chunks=10))
 
+# d2sj-W4: the same with a significance level that shrinks with n,
+# alpha_n = 0.05 * 1600 / n, as consistency of PC/FCI requires (a fixed alpha
+# leaves a floor of spurious adjacencies).
+for n in (6400, 25600, 102400):
+    a = 0.05 * 1600 / n
+    EXPERIMENTS[f"nscalea_lin_n{n}"] = _exp(["pc", "fci"], 30, cfg=dict(n=n, pc_alpha=a, fci_alpha=a),
+                                             opts=dict(score_only=True, n_test_chunks=10))
+    EXPERIMENTS[f"nscalea_hubs_n{n}"] = _exp(["pc", "fci"], 30, cfg=dict(n=n, pc_alpha=a, fci_alpha=a, **HUBS_CFG),
+                                              data=HUBS, opts=dict(score_only=True, n_test_chunks=10))
+
 # d2sj-W4 / Thm 2 / Prop 2: the same with the standard candidate family, to
 # count false adjacencies of admitted graphs as n grows.
 for n in (1600, 6400, 25600):
@@ -94,6 +104,12 @@ for h in (0, 1, 2, 3, 4, 6):
     EXPERIMENTS[f"hubdose_h{h}"] = _exp(["pc", "fci"], 20, cfg=dict(HUBS_CFG),
                                         data=dict(n_latent=h, latent_mode="hubs"),
                                         opts=dict(run_ablations=True))
+
+# The same at expected degree 2 (the density of the main setting), so that the
+# no-hub arm is a well-specified control of the same size (p = 26).
+for h in (0, 2, 4, 6):
+    EXPERIMENTS[f"hubdose2_h{h}"] = _exp(["pc", "fci"], 20, cfg=dict(p=26, expected_degree=2.0),
+                                         data=dict(n_latent=h, latent_mode="hubs"), opts=dict(run_ablations=True))
 
 
 def _offset(method: str) -> int:
