@@ -223,7 +223,9 @@ def _det_rows(exp, root=RC, label=None):
 def sec_kscope():
     # The "all" and "none" arms are the stored results_v3 records (same seeds and options).
     old = {"kscope_none": "know_none", "kscope_all_rev0": "know_hard_rev0", "kscope_all_rev30": "know_hard_rev30"}
-    exps = ["kscope_none"] + [f"kscope_{s}_rev{r}" for s in ("all", "candidates", "local") for r in (0, 30)]
+    # The "local" arm (subset graphs only) was stopped after one run: in skeleton mode
+    # orientation-only knowledge leaves the subset skeletons, hence the score, unchanged.
+    exps = ["kscope_none"] + [f"kscope_{s}_rev{r}" for s in ("all", "candidates") for r in (0, 30)]
     df = pd.DataFrame([r for e in exps for r in (_det_rows(old[e], R3, e) if e in old else _det_rows(e))])
     df = df[df.repeat < 20]
     df.to_csv(os.path.join(OUT, "kscope_per_run.csv"), index=False)
