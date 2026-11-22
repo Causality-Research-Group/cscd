@@ -78,6 +78,10 @@ class OptionsV3:
     run_decision: bool = False
     decision_n_pairs: int = 5
     store_local: bool = True
+    # Rebuttal ablation (Rfqt-Q1): False gives hard knowledge to the
+    # full-variable runs (candidates, bootstrap) but not to the subset runs,
+    # so the knowledge is used inconsistently.
+    local_knowledge: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -138,13 +142,14 @@ def mec_key(marks: pd.DataFrame, names: List[str]) -> bytes:
 
 
 def mec_key_pag(marks: pd.DataFrame, names: List[str]) -> bytes:
-    """Exact key of the Markov equivalence class of a candidate: its PAG over V.
+    """Key of the Markov equivalence class of a candidate: its PAG over V.
 
-    Two MAGs are Markov equivalent if and only if they have the same PAG, so
-    this key is exact for every candidate, including FCI outputs with
-    bidirected edges, where ``mec_key`` can merge classes that differ only in
-    a collider on a discriminating path.  For DAG-like candidates the two keys
-    induce the same partition.
+    In theory the PAG identifies the class exactly.  In practice this relies
+    on causal-learn's ``dag2pag``, which merged two non-equivalent MAGs in the
+    rebuttal check (main_v3, FCI repeat 23: the two graphs differ in a
+    d-separation, yet got the same PAG), and it takes minutes per graph.
+    Prefer ``rebuttal.dedup_exact.equivalent_mags`` (Spirtes and Richardson,
+    1996), which was confirmed against d-separation on that pair.
     """
     from .mixed_graph import marginal_pag
 
@@ -323,8 +328,15 @@ def fit_repeat_v3(
         subsets = sample_variable_subsets(names, config.n_subsets, config.subset_frac, rng,
                                           require_pair_coverage=config.require_pair_coverage)
 
+    if opts.local_knowledge:
+        local_knowledge = knowledge
+    else:
+        from .utils import make_domain_knowledge
+
+        local_knowledge = make_domain_knowledge(names)
+
     t = time.perf_counter()
-    local = _local(D_tr, subsets, knowledge, method, config, rng)
+    local = _local(D_tr, subsets, local_knowledge, method, config, rng)
     keep = [j for j, g in enumerate(local) if g is not None]
     subsets = [subsets[j] for j in keep]
     local = [local[j] for j in keep]
@@ -337,7 +349,7 @@ def fit_repeat_v3(
     def chunk_pass(chunks: List[pd.DataFrame]):
         scores, scores_nopen, graphs = [], [], []
         for C in chunks:
-            loc = _local(C, subsets, knowledge, method, config, rng)
+            loc = _local(C, subsets, local_knowledge, method, config, rng)
             per, per_np = [], []
             for j, g in enumerate(loc):
                 if g is None:
