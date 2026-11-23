@@ -6,6 +6,19 @@ Every number below comes from `rebuttal/out/chris/*.csv` (per-run files next to 
 
 > **Read §1 first.** One result affects a sentence already in the new abstract and in the responses to Rfqt, xFQE and Kmr8.
 
+## Summary
+
+| Review point | Experiment | Outcome for the rebuttal |
+|---|---|---|
+| Rfqt-W3, xFQE-W3, Kmr8-W2, new abstract | Paired control for hidden hubs (§1) | Detection survives (AUROC 0.87 PC, 0.86 GES), but the false-flag rate at the same density is 30–47%, not 7–17%. **Reword the abstract.** |
+| AI-3.1 (promised) | Redefined no-subsets baseline (§2) | Flags 0–3% of hub runs (AUROC < 0.25) vs CSCD 87–90%: the subsets are what detects. Supports the answer as drafted. |
+| Kmr8-Q1 (promised) | Training fraction 0.3–0.8 (§3) | Valid at every split; 0.5 is the smallest share keeping G* in 100% of runs, and τ grows 60% by 0.8. Supports 50/50. |
+| d2sj-W4 (promised) | Scaling to n = 102,400, fixed and shrinking α (§4) | Validity holds at every n. The Theorem 2 limit is reached only slowly, and only without dense confounding; FCI does no better than PC. **Soften "the event of Theorem 2 becomes likely".** |
+| Rfqt-Q1 | Knowledge scope and soft-penalty λ (§5) | Hard knowledge acts only through the base algorithm (it does not change the skeleton score). The soft penalty as implemented is inert; applied to candidates only, it keeps G* when K is correct and loses it when K is wrong. |
+| Rfqt-W3, Kmr8-W2 | Hub dose-response (§6) | The flag tracks graph density / systematic error more than the number of confounders; gating still halves the kept runs' error. |
+| d2sj-W1 | γ sweep of claim FDP (§7) | PC orientations: bootstrap-level FDP with ~40% more recall; GES worse at every γ. |
+| — | Code issues (§8) | `corrupt_knowledge` is not reproducible (set order); R_K penalises undirected edges. |
+
 ---
 
 ## 1. Matched control for hidden hubs (Rfqt-W3, xFQE-W3, Kmr8-W2; new abstract). **Changes a claim in the draft**
