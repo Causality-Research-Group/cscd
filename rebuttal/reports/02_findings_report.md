@@ -110,8 +110,11 @@ This is an **honest negative** for the response as drafted ("the event of Theore
 | FCI | 25,600 | 0.11 | 0.67 | 1.0 / 2.8 | 12.2 | 0.73 |
 | PC | 1,600 | 0.17 | 0.27 | 0.7 / 2.2 | 35.2 | 0.73 |
 | PC | 25,600 | 0.003 | 0.93 | 0.0 / 0.0 | 4.2 | 1.00 |
+| *no latents:* FCI | 1,600 | 0.92 | 0.00 | 2.6 / 7.1 | 1.6 | 0.00 |
+| *no latents:* FCI | 25,600 | 0.59 | 0.07 | 1.9 / 5.6 | 0.7 | 0.13 |
+| *no latents:* PC | 25,600 | 0.39 | 0.00 | 1.0 / 3.6 | 0.7 | 0.20 |
 
-This matches Proposition 2 / Theorem 2 qualitatively: admitted graphs have about one false adjacency or none, the error is in **missing** edges, and with more data CSCD abstains (empty set) rather than admit wrong graphs.
+This matches Proposition 2 / Theorem 2 qualitatively: admitted graphs have about one false adjacency or none, the error is in **missing** edges, and with more data CSCD abstains (empty set) rather than admit wrong graphs. Without latents, admitted graphs carry 1–2.6 false adjacencies on average (more than Ĝ's ≈1), as expected at τ > 0 (the Kmr8 bound). Accepted adjacency claims still have precision 0.99, because the claims vote these idiosyncratic extra edges out.
 
 ### 4b. Shrinking test level αₙ = 0.05·1600/n (n = 6,400 → 102,400; 30 runs per cell)
 
@@ -172,10 +175,13 @@ Suggested answer to Rfqt-Q1: say honestly that hard knowledge acts through the b
 | Degree | Hidden hubs | PC skel. err. | PC CSCD flag | FCI CSCD flag | Bootstrap flag |
 |---|---|---|---|---|---|
 | 3 | 0 | 9.5 | 0.85 | 0.45 | 0.00 |
+| 3 | 1 | 16.6 | 0.80 | 0.40 | 0.00 |
 | 3 | 2 | 23.8 | 0.85 | 0.45 | 0.00 |
+| 3 | 4 | 31.1 | 0.95 | 0.40 | 0.00 |
 | 3 | 6 | 37.8 | 0.90 | 0.25 | 0.00 |
 | 2 | 0 | 3.4 | 0.10 | 0.05 | 0.00 |
 | 2 | 2 | 6.9 | 0.15 | 0.05 | 0.00 |
+| 2 | 4 | 9.2 | 0.35 | 0.00 | 0.00 |
 | 2 | 6 | 12.0 | 0.20 | 0.00 | 0.00 |
 
 There is no clean dose-response. The flag tracks density (PC/GES subset errors are systematic in dense graphs) more than the number of hidden confounders. Gating still pays off: pooled over hub levels, kept PC runs have skeleton error 10.9 vs 25.7 for flagged runs (degree 3) and 5.4 vs 18.7 (degree 2). The flag is precise but has low recall at degree 2. FCI is rarely flagged at either density.
@@ -204,7 +210,8 @@ For PC, CSCD's orientation claims reach the bootstrap's FDP with 40% more recall
 ## 9. What was not done
 
 - The degree-3/degree-2 hub series used PC and FCI only (GES at p = 26 is ~5× slower); `sinks_v3` has GES.
-- Tail of the queue (n = 800/3,200/12,800 for the scaling, h = 1/4, the no-latent candidate-family scaling): *[status at the end of the session — see §10]*.
+- All 2,390 queued runs finished with no failures (plus the 360 no-subsets runs). The degree-2 series used h ∈ {0, 2, 4, 6}, and the candidate-family scaling used 15 runs per cell.
+- The "knowledge in subset graphs only" arm was stopped after one run once it was clear that orientation-only knowledge leaves the skeleton score unchanged (§5a).
 - The machine was shared with other applications for most of the run, so per-task wall times were 3–10× longer than nominal. The training-fraction sweep was therefore run score-only (no admitted fraction or claims), and repeat counts are 20–30 per cell.
 
 ## 10. Reproduce
