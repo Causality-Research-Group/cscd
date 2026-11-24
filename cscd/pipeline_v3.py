@@ -82,6 +82,10 @@ class OptionsV3:
     # full-variable runs (candidates, bootstrap) but not to the subset runs,
     # so the knowledge is used inconsistently.
     local_knowledge: bool = True
+    # Rebuttal wave 3 (Rfqt-Q1), same ablation with one more arm: "all" (paper:
+    # every discovery), "candidates" (= local_knowledge=False) or "local"
+    # (subset runs only; candidates without knowledge).
+    knowledge_scope: str = "all"
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +279,14 @@ def fit_repeat_v3(
     rng = np.random.default_rng(rng_seed)
     names = list(data.columns)
     times: Dict[str, float] = {}
+    if opts.knowledge_scope != "all":
+        from .utils import make_domain_knowledge
+
+        empty = make_domain_knowledge(names)
+        knowledge_local = knowledge if opts.knowledge_scope == "local" else empty
+        knowledge = knowledge if opts.knowledge_scope == "candidates" else empty
+    else:
+        knowledge_local = knowledge
     t0 = time.perf_counter()
 
     n = len(data)
@@ -328,15 +340,13 @@ def fit_repeat_v3(
         subsets = sample_variable_subsets(names, config.n_subsets, config.subset_frac, rng,
                                           require_pair_coverage=config.require_pair_coverage)
 
-    if opts.local_knowledge:
-        local_knowledge = knowledge
-    else:
+    if not opts.local_knowledge:
         from .utils import make_domain_knowledge
 
-        local_knowledge = make_domain_knowledge(names)
+        knowledge_local = make_domain_knowledge(names)
 
     t = time.perf_counter()
-    local = _local(D_tr, subsets, local_knowledge, method, config, rng)
+    local = _local(D_tr, subsets, knowledge_local, method, config, rng)
     keep = [j for j, g in enumerate(local) if g is not None]
     subsets = [subsets[j] for j in keep]
     local = [local[j] for j in keep]
@@ -349,7 +359,7 @@ def fit_repeat_v3(
     def chunk_pass(chunks: List[pd.DataFrame]):
         scores, scores_nopen, graphs = [], [], []
         for C in chunks:
-            loc = _local(C, subsets, local_knowledge, method, config, rng)
+            loc = _local(C, subsets, knowledge_local, method, config, rng)
             per, per_np = [], []
             for j, g in enumerate(loc):
                 if g is None:
