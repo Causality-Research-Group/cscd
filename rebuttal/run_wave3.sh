@@ -1,10 +1,10 @@
 #!/bin/bash
-# Queue of the wave-2 rebuttal experiments (branch rebuttal/experiments-chris).
-# Records: results_v3_chris/<exp>/rec_*.pkl (resumable: existing records are skipped).
+# Queue of the wave-3 rebuttal experiments.
+# Records: results_v3_wave3/<exp>/rec_*.pkl (resumable: existing records are skipped).
 set -u
 cd "$(dirname "$0")/.."
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1
-PY=".venv/bin/python -W ignore -m rebuttal.exp_chris"
+PY=".venv/bin/python -W ignore -m rebuttal.wave3_experiments"
 W=${WORKERS:-9}
 # Priority order.  The "all" and "none" knowledge arms are results_v3/know_hard_rev0,
 # know_hard_rev30 and know_none (same seeds, same options), so only the new arms run.

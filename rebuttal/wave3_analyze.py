@@ -1,9 +1,9 @@
-"""Summaries of the wave-2 rebuttal experiments (branch rebuttal/experiments-chris).
+"""Summaries of the wave-3 rebuttal experiments.
 
-Usage:  .venv/bin/python -W ignore -m rebuttal.analyze_chris [section ...]
+Usage:  .venv/bin/python -W ignore -m rebuttal.wave3_analyze [section ...]
 Sections: nosub trainfrac nscale kscope hubdose lam gamma   (default: all)
-Writes CSV files to rebuttal/out/chris/ and a markdown digest
-rebuttal/out/chris/<section>.md for each section.
+Writes CSV files to rebuttal/out/wave3/ and a markdown digest
+rebuttal/out/wave3/<section>.md for each section.
 """
 
 import glob
@@ -28,8 +28,8 @@ from cscd.analysis_v3 import (
 )
 from cscd.selfcompat import conformal_threshold
 
-R3, RC = "results_v3", os.environ.get("CSCD_CHRIS_ROOT", "results_v3_chris")
-OUT = "rebuttal/out/chris"
+R3, RC = "results_v3", os.environ.get("CSCD_WAVE3_ROOT", "results_v3_wave3")
+OUT = "rebuttal/out/wave3"
 ALPHA, GAMMA = 0.1, 0.9
 
 
@@ -92,7 +92,7 @@ def claims_of(rec, adm, kinds=("adj", "dir_def")):
 # ---------------------------------------------------------------------------
 
 def sec_nosub():
-    df = pd.read_csv("rebuttal/out/nosub_per_run.csv")
+    df = pd.read_csv("rebuttal/out/wave3/nosub_per_run.csv")
     pairs = [("Hidden hubs", "hubs_v3", "main_v3"), ("p=50, n=1000", "highdim_v3", "lowdim_n1000_v3"),
              ("Quadratic (shared)", "quadratic_v3", "main_v3")]
     rows = []

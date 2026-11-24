@@ -1,26 +1,36 @@
-"""Rebuttal experiments, wave 2 (branch rebuttal/experiments-chris).
+"""Rebuttal experiments, wave 3.
 
-Experiments that the draft responses promise "during the discussion", plus
-two that close open review points.  Records go to results_v3_chris/<exp>/
-(gitignored); summaries are written by rebuttal/analyze_chris.py.
+Experiments for the review points that were still open, plus
+controls added after the first results.  Records go to results_v3_wave3/<exp>/
+(gitignored); summaries are written by rebuttal/wave3_analyze.py.
 
-  trainfrac_<f>        Kmr8-Q1   sweep of the training fraction, N = 9.
-  nscale_<lin|hubs>_n  d2sj-W4   sample-size scaling of local error, P(tau=0)
-                                 and inclusion, PC vs FCI, with and without
-                                 hidden confounders (score only).
-  kscope_<scope>_rev<r> Rfqt-Q1  where hard knowledge is used: candidates only,
-                                 local runs only (paper: everywhere), with
-                                 correct and 30%-reversed knowledge.
-  hubdose_h<h>         Rfqt-W3/Kmr8-W2  dose-response of the native flag in
-                                 the number of hidden hubs.
+  trainfrac_<f>         Kmr8-Q1   training fraction 0.3-0.8 at N = 9 (score only).
+  nscale_<lin|hubs>_n   d2sj-W4   sample-size scaling, n = 400-25,600, fixed test
+                                  level 0.05: local errors, P(tau=0), inclusion,
+                                  PC vs FCI, without / with 6 hidden hubs.
+  nscalea_<lin|hubs>_n  d2sj-W4   the same with a shrinking test level
+                                  alpha_n = 0.05 * 1600 / n, n up to 102,400.
+  nscand_<lin|hubs>_n   Thm 2 / Prop 2  the same with the candidate family:
+                                  false and missing adjacencies of admitted graphs.
+  kscope_<scope>_rev<r> Rfqt-Q1   hard knowledge in the candidates only vs
+                                  everywhere, correct and 30%-reversed.
+  hubdose_h<h>          Rfqt-W3   0-6 hidden hubs, p = 26, expected degree 3.
+  hubdose2_h<h>         Rfqt-W3   the same at expected degree 2.
+  sinks_v3              Rfqt-W3, xFQE-W3  paired control of results_v3/hubs_v3:
+                                  same DAGs and data, 6 sinks hidden instead of
+                                  6 hubs (no hidden confounding).
+
+Also: rebuttal/wave3_nosub.py (AI-3.1, non-degenerate no-subsets baseline on the
+records of results_v3) and the offline sections "lam" (soft-penalty sweep) and
+"gamma" (claim error vs gamma) of rebuttal/wave3_analyze.py.
 
 Seeds follow experiments_v3.py: repeat r of a preset draws the same graph and
 data as repeat r of every other preset with the same data settings, and the
 method-specific split seed is unchanged.
 
 Usage:
-    .venv/bin/python -m rebuttal.exp_chris --list
-    .venv/bin/python -m rebuttal.exp_chris trainfrac_50 ... [--workers 9] [--repeats R]
+    .venv/bin/python -m rebuttal.wave3_experiments --list
+    .venv/bin/python -m rebuttal.wave3_experiments trainfrac_50 ... [--workers 9] [--repeats R]
 """
 
 import argparse
@@ -41,7 +51,7 @@ from cscd.pipeline_v3 import OptionsV3, fit_repeat_v3
 from cscd.scenarios import make_scenario
 from cscd.utils import corrupt_knowledge, knowledge_from_true_graph, make_domain_knowledge
 
-ROOT = os.environ.get("CSCD_CHRIS_ROOT", "results_v3_chris")
+ROOT = os.environ.get("CSCD_WAVE3_ROOT", "results_v3_wave3")
 
 BASE_CFG = dict(n=3200, p=20, n_subsets=25, subset_frac=0.5, n_candidate_graphs=100,
                 stability_n_bootstraps=50, random_seed=2027)

@@ -1,7 +1,7 @@
 # Rebuttal experiments, wave 2: findings (22–23 Nov 2026)
 
 Branch `cscd/rebuttal/experiments-chris` (from `rebuttal_exp` at 9b4539a; nothing on the professor's branches was changed).
-Every number below comes from `rebuttal/out/chris/*.csv` (per-run files next to each summary), which `rebuttal/analyze_chris.py` regenerates from the records in `results_v3_chris/` (local only, gitignored) and `results_v3/`.
+Every number below comes from `rebuttal/out/wave3/*.csv` (per-run files next to each summary), which `rebuttal/wave3_analyze.py` regenerates from the records in `results_v3_wave3/` (local only, gitignored) and `results_v3/`.
 α = 0.1, N = 9, γ = 0.9 unless stated. Intervals are Wilson 95% over independent runs.
 
 > **Read §1 first.** One result affects a sentence already in the new abstract and in the responses to Rfqt, xFQE and Kmr8.
@@ -230,8 +230,8 @@ For PC, CSCD's orientation claims reach the bootstrap's FDP with 40% more recall
 ## 10. Reproduce
 
 ```bash
-.venv/bin/python -m rebuttal.exp_chris --list
-WORKERS=8 rebuttal/run_chris.sh          # all experiments, resumable
-.venv/bin/python -W ignore -m rebuttal.nosub_chris --workers 8
-.venv/bin/python -W ignore -m rebuttal.analyze_chris   # writes rebuttal/out/chris/*.{csv,md}
+.venv/bin/python -m rebuttal.wave3_experiments --list
+WORKERS=8 rebuttal/run_wave3.sh          # all experiments, resumable
+.venv/bin/python -W ignore -m rebuttal.wave3_nosub --workers 8
+.venv/bin/python -W ignore -m rebuttal.wave3_analyze   # writes rebuttal/out/wave3/*.{csv,md}
 ```

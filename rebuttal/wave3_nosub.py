@@ -9,7 +9,7 @@ stored cands[0]):
   full-data  reference R = G-hat (full-variable run on D_train); calibration
              scores d(A(chunk_b), R) on the N = 9 calibration chunks; the
              tested graph is the full-data run A(D) on D = D_train + D_cal
-             (the reading of the draft response).  Not strictly conformal,
+             (the reading of AI-review item 3.1).  Not strictly conformal,
              since A(D) uses the calibration rows.
   split      D_train is halved; R = A(D_train,a); the tested graph is
              A(D_train,b); calibration scores d(A(chunk_b), R).  Every graph
@@ -20,8 +20,8 @@ Both flag when the tested graph's skeleton distance to R exceeds the
 conformal threshold at alpha = 0.1.  The raw distances are also stored for
 AUROC against the control scenario.
 
-Usage:  .venv/bin/python -m rebuttal.nosub_chris [--workers 9]
-Output: rebuttal/out/nosub_per_run.csv
+Usage:  .venv/bin/python -m rebuttal.wave3_nosub [--workers 9]
+Output: rebuttal/out/wave3/nosub_per_run.csv
 """
 
 import argparse
@@ -126,7 +126,7 @@ def one(path: str) -> dict:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--workers", type=int, default=9)
-    ap.add_argument("--out", default="rebuttal/out/nosub_per_run.csv")
+    ap.add_argument("--out", default="rebuttal/out/wave3/nosub_per_run.csv")
     args = ap.parse_args()
     paths = sorted(p for e in EXPS for p in glob.glob(f"results_v3/{e}/rec_*.pkl"))
     done = set()
