@@ -106,7 +106,12 @@ def conservative_adjustment_from_claims(
 
 
 def _descendants(adj: pd.DataFrame, node: str) -> List[str]:
-    """Return all descendants of node in the adjacency DataFrame (BFS)."""
+    """Return all descendants of node in the adjacency DataFrame (BFS), in column order.
+
+    The order matters: callers draw an outcome with rng.integers(len(desc)).
+    Returning list(visited) made the draw depend on the per-process string
+    hash seed, so decision-task results were not reproducible across runs.
+    """
     visited = set()
     queue = [node]
     while queue:
@@ -115,7 +120,7 @@ def _descendants(adj: pd.DataFrame, node: str) -> List[str]:
             if v != cur and v not in visited and adj.loc[cur, v] == 1:
                 visited.add(v)
                 queue.append(v)
-    return list(visited)
+    return [v for v in adj.columns if v in visited]
 
 
 def _is_confounded(true_graph: pd.DataFrame, t: str, y: str) -> bool:

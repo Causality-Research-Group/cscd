@@ -29,7 +29,9 @@ from cscd.pipeline_v3 import OptionsV3, fit_repeat_v3
 from cscd.scenarios import make_scenario, make_semisynthetic
 from cscd.utils import corrupt_knowledge, knowledge_from_true_graph, make_domain_knowledge
 
-ROOT = "results_v3"
+# Read from the environment so that worker processes, which re-import this
+# module, write to the same place as the parent.
+ROOT = os.environ.get("CSCD_RESULTS_ROOT", "results_v3")
 
 BASE_CFG = dict(n=3200, p=20, n_subsets=25, subset_frac=0.5, n_candidate_graphs=100,
                 stability_n_bootstraps=50, random_seed=2027)
@@ -86,6 +88,22 @@ EXPERIMENTS: Dict[str, Dict] = {
                          data=dict(scenario="semi", network="ecoli70")),
     "sachs_obs_v3": _exp(PCGESFCI, 20, cfg=dict(n_subsets=15), opts=dict(n_test_chunks=3, run_bayes=True, mcmc_iterations=20000, **LIGHT),
                          real="sachs_obs"),
+    # Rebuttal, Kmr8-Q1: fraction of the data used for training (main setting,
+    # standard pool).  The bootstrap baseline is not needed, so it is minimal.
+    **{f"split_f{int(round(100 * f))}": _exp(PCGESFCI, 20, opts=dict(train_frac=f, n_boot_baseline=2, **LIGHT))
+       for f in (0.3, 0.4, 0.5, 0.6, 0.7, 0.8)},
+    # Rebuttal, d2sj-W4: sample-size sweep under hidden hub confounders
+    # (the hubs_v3 data), scores and subset graphs only.
+    **{f"latent_n{n}": _exp(["fci", "pc"], 20, cfg=dict(p=26, expected_degree=3.0, n=n),
+                            opts=dict(score_only=True), data=dict(n_latent=6, latent_mode="hubs"))
+       for n in (800, 1600, 3200, 6400, 12800)},
+    # Rebuttal, Rfqt-Q1: hard knowledge given to the full-variable runs only,
+    # not to the subset runs (compare with know_hard_rev0 and know_hard_rev30).
+    **{f"know_hard_rev{int(100 * r)}_nolocal": _exp(["pc", "fci"], 20,
+                                                    cfg=dict(knowledge_regime="noisy" if r > 0 else "correct",
+                                                             knowledge_noise=r, knowledge_mode="hard"),
+                                                    opts=dict(run_ablations=True, local_knowledge=False))
+       for r in (0.0, 0.3)},
 }
 
 
@@ -93,12 +111,13 @@ def _offset(method: str) -> int:
     return sum(ord(c) * (i + 1) for i, c in enumerate(method)) % 100_000
 
 
-def run_task(exp_name: str, repeat: int, method: str) -> str:
+def make_inputs(exp_name: str, repeat: int) -> Dict:
+    """Configuration, data and knowledge of one repeat of an experiment.
+
+    Deterministic in (exp_name, repeat): the rebuttal scripts call it to
+    regenerate exactly the data that ``run_task`` used.
+    """
     spec = EXPERIMENTS[exp_name]
-    out = os.path.join(ROOT, exp_name, f"rec_{repeat:03d}_{method}.pkl")
-    if os.path.exists(out):
-        return f"skip {out}"
-    logging.basicConfig(level=logging.WARNING)
     cfg = replace(ExperimentConfig(**BASE_CFG), **spec["cfg"])
     opts = OptionsV3(**spec["opts"])
     seed = cfg.random_seed + repeat
@@ -135,11 +154,22 @@ def run_task(exp_name: str, repeat: int, method: str) -> str:
             knowledge = K
         else:
             soft, lam = K, cfg.lambda_penalty
+    return dict(cfg=cfg, opts=opts, seed=seed, data=data, test_data=test_data, full_dag=full_dag,
+                true_graph=true_graph, weights=weights, knowledge=knowledge, soft=soft, lam=lam, K=K)
+
+
+def run_task(exp_name: str, repeat: int, method: str) -> str:
+    out = os.path.join(ROOT, exp_name, f"rec_{repeat:03d}_{method}.pkl")
+    if os.path.exists(out):
+        return f"skip {out}"
+    logging.basicConfig(level=logging.WARNING)
+    x = make_inputs(exp_name, repeat)
+    cfg, K = x["cfg"], x["K"]
 
     t = time.time()
-    rec = fit_repeat_v3(data, method, cfg, knowledge, opts, rng_seed=seed * 1000 + _offset(method),
-                        true_full_dag=full_dag, true_graph=true_graph, test_data=test_data,
-                        soft_knowledge=soft, lambda_penalty=lam, weights=weights)
+    rec = fit_repeat_v3(x["data"], method, cfg, x["knowledge"], x["opts"], rng_seed=x["seed"] * 1000 + _offset(method),
+                        true_full_dag=x["full_dag"], true_graph=x["true_graph"], test_data=x["test_data"],
+                        soft_knowledge=x["soft"], lambda_penalty=x["lam"], weights=x["weights"])
     rec.update(experiment=exp_name, repeat=repeat, wall=time.time() - t,
                knowledge_regime=cfg.knowledge_regime, knowledge_mode=cfg.knowledge_mode,
                knowledge_noise=cfg.knowledge_noise if cfg.knowledge_regime == "noisy" else 0.0,

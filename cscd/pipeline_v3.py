@@ -78,6 +78,14 @@ class OptionsV3:
     run_decision: bool = False
     decision_n_pairs: int = 5
     store_local: bool = True
+    # Rebuttal ablation (Rfqt-Q1): False gives hard knowledge to the
+    # full-variable runs (candidates, bootstrap) but not to the subset runs,
+    # so the knowledge is used inconsistently.
+    local_knowledge: bool = True
+    # Rebuttal wave 3 (Rfqt-Q1), same ablation with one more arm: "all" (paper:
+    # every discovery), "candidates" (= local_knowledge=False) or "local"
+    # (subset runs only; candidates without knowledge).
+    knowledge_scope: str = "all"
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +143,22 @@ def mec_key(marks: pd.DataFrame, names: List[str]) -> bytes:
             if not adj[a, b] and mag[a, c] == 2 and mag[b, c] == 2:
                 coll[a, b, c] = coll[b, a, c] = True
     return adj.tobytes() + np.packbits(coll).tobytes()
+
+
+def mec_key_pag(marks: pd.DataFrame, names: List[str]) -> bytes:
+    """Key of the Markov equivalence class of a candidate: its PAG over V.
+
+    In theory the PAG identifies the class exactly.  In practice this relies
+    on causal-learn's ``dag2pag``, which merged two non-equivalent MAGs in the
+    rebuttal check (main_v3, FCI repeat 23: the two graphs differ in a
+    d-separation, yet got the same PAG), and it takes minutes per graph.
+    Prefer ``rebuttal.dedup_exact.equivalent_mags`` (Spirtes and Richardson,
+    1996), which was confirmed against d-separation on that pair.
+    """
+    from .mixed_graph import marginal_pag
+
+    pag = marginal_pag(marks, names).loc[names, names].values.astype(np.int8)
+    return pag.tobytes()
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +279,14 @@ def fit_repeat_v3(
     rng = np.random.default_rng(rng_seed)
     names = list(data.columns)
     times: Dict[str, float] = {}
+    if opts.knowledge_scope != "all":
+        from .utils import make_domain_knowledge
+
+        empty = make_domain_knowledge(names)
+        knowledge_local = knowledge if opts.knowledge_scope == "local" else empty
+        knowledge = knowledge if opts.knowledge_scope == "candidates" else empty
+    else:
+        knowledge_local = knowledge
     t0 = time.perf_counter()
 
     n = len(data)
@@ -308,8 +340,13 @@ def fit_repeat_v3(
         subsets = sample_variable_subsets(names, config.n_subsets, config.subset_frac, rng,
                                           require_pair_coverage=config.require_pair_coverage)
 
+    if not opts.local_knowledge:
+        from .utils import make_domain_knowledge
+
+        knowledge_local = make_domain_knowledge(names)
+
     t = time.perf_counter()
-    local = _local(D_tr, subsets, knowledge, method, config, rng)
+    local = _local(D_tr, subsets, knowledge_local, method, config, rng)
     keep = [j for j, g in enumerate(local) if g is not None]
     subsets = [subsets[j] for j in keep]
     local = [local[j] for j in keep]
@@ -322,7 +359,7 @@ def fit_repeat_v3(
     def chunk_pass(chunks: List[pd.DataFrame]):
         scores, scores_nopen, graphs = [], [], []
         for C in chunks:
-            loc = _local(C, subsets, knowledge, method, config, rng)
+            loc = _local(C, subsets, knowledge_local, method, config, rng)
             per, per_np = [], []
             for j, g in enumerate(loc):
                 if g is None:
@@ -473,8 +510,16 @@ def fit_repeat_v3(
 
         t = time.perf_counter()
         tau = conformal_threshold(cal, 0.1)
-        admitted = [G for G, s, tg in zip(cands, cand_scores, tags) if s <= tau and tg != "truth"]
-        std = [G for G, tg in zip(cands, tags) if tg in ("full", "grid", "boot", "edit")]
+        from .analysis_v3 import standard_mask
+
+        # The CSCD set and "pool" must both come from the paper's standard family
+        # (the same 101 graphs used for the claims), so that the CSCD set is a
+        # subset of the pool.  Before this fix the CSCD set was filtered from
+        # every scored candidate, including the candidate-family arms, and the
+        # pool took every graph tagged full/grid/boot/edit (207 in arms mode).
+        in_family = standard_mask(tags, config.n_candidate_graphs)
+        admitted = [G for G, s, f in zip(cands, cand_scores, in_family) if f and s <= tau]
+        std = [G for G, f in zip(cands, in_family) if f]
         sets = {"single": [cands[0]], "cscd_set": admitted, "pool": std,
                 "bootstrap_avg": boot if not opts.score_only else []}
         if mcmc is not None:
@@ -483,6 +528,11 @@ def fit_repeat_v3(
         try:
             rec["decision"] = decision_task_v2(test_data, weights, names, true_graph.loc[names, names], sets,
                                                np.random.default_rng(rng_seed + 7919), n_pairs=opts.decision_n_pairs)
+            # An empty CSCD set yields NaN for its bias and coverage.  Keep its
+            # size so that the analysis can count such repeats as abstentions
+            # (no coverage) instead of silently dropping them.
+            rec["decision"]["dec2_size_cscd_set"] = len(admitted)
+            rec["decision"]["dec2_size_pool"] = len(std)
         except Exception as exc:
             logger.warning("Decision task failed (%s).", exc)
         times["decision"] = time.perf_counter() - t
